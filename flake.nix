@@ -1,0 +1,37 @@
+{
+  description = "Rust development environment";
+
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = {
+    nixpkgs,
+    rust-overlay,
+    ...
+  }: let
+    inherit (nixpkgs) lib;
+    forAllSystems = lib.genAttrs lib.systems.flakeExposed;
+  in {
+    devShells = forAllSystems (
+      system: let
+        overlays = [(import rust-overlay)];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+      in {
+        default = pkgs.mkShell {
+          packages = with pkgs; [
+            # Rust toolchain
+            rust-bin.stable.latest.default
+            cargo-watch
+          ];
+        };
+      }
+    );
+  };
+}
