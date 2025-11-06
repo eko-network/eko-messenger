@@ -2,7 +2,8 @@ use axum::{Json, extract::State};
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 
-use crate::{AppState, errors::AppError};
+use crate::errors::AppError;
+use crate::AppState;
 #[derive(Deserialize)]
 pub struct LoginRequest {
     email: String,

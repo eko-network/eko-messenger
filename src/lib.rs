@@ -1,16 +1,21 @@
+pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
+
 use crate::{
     auth::{Auth, login_handler},
+    errors::AppError,
     firebase_auth::FirebaseAuth,
 };
 use anyhow::{Context, anyhow};
 use axum::{
     Router,
-    response::Html,
+    extract::{Path, Query},
+    response::{Html, Json},
     routing::{get, post},
 };
+use serde::Deserialize;
 use std::{env::var_os, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
@@ -18,6 +23,12 @@ use tokio::net::TcpListener;
 pub struct AppState {
     auth: Arc<Auth<FirebaseAuth>>,
 }
+
+#[derive(Deserialize)]
+pub struct WebFingerQuery {
+    resource: String,
+}
+
 async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
     let url = var_os("REDIS_URL")
         .expect("REDIS_URL not found in enviroment")
@@ -32,10 +43,10 @@ async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
         .context("Failed to connect to redis")?;
     Ok(redis_conn)
 }
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let redis = redis_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
-    // premptive clone
     let auth = Auth::new(firebase_auth, redis.clone());
     let app_state = AppState {
         auth: Arc::new(auth),
@@ -44,6 +55,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(root_handler))
         .route("/api/v1/login", post(login_handler))
+        .route("/.well-known/webfinger", get(webfinger_handler))
+        .route("/users/{username}", get(actor_handler))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -79,4 +92,48 @@ async fn root_handler() -> Html<&'static str> {
         </body>
         </html>
     ")
+}
+
+async fn webfinger_handler(
+    Query(query): Query<WebFingerQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let resource = query.resource;
+    if !resource.starts_with("acct:") {
+        return Err(AppError::BadRequest("Invalid resource format".to_string()));
+    }
+
+    let parts: Vec<&str> = resource.trim_start_matches("acct:").split('@').collect();
+    if parts.len() != 2 {
+        return Err(AppError::BadRequest("Invalid resource format".to_string()));
+    }
+    let username = parts[0];
+    let domain = parts[1];
+
+    let server_domain = "127.0.0.1:3000";
+    if domain != server_domain {
+        return Err(AppError::NotFound(
+            "User not found on this domain".to_string(),
+        ));
+    }
+
+    let actor_url = format!("http://{}/users/{}", server_domain, username);
+
+    let jrd = serde_json::json!({
+        "subject": resource,
+        "links": [
+            {
+                "rel": "self",
+                "type": "application/activity+json",
+                "href": actor_url,
+            }
+        ]
+    });
+
+    Ok(Json(jrd))
+}
+
+async fn actor_handler(Path(username): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+    let server_domain = "127.0.0.1:3000";
+    let actor = activitypub::create_actor(&username, server_domain);
+    Ok(Json(actor))
 }
