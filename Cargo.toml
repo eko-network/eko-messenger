@@ -6,8 +6,13 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 axum = "0.8.6"
+chrono = { version = "0.4.42", features = ["serde"] }
 redis = {version="0.32.7", features=["tokio-comp"]}
 reqwest = {version="0.12.24", features=["json"]}
 serde = {version="1.0.228", features=["derive"]}
 serde_json = "1.0.145"
 tokio = {version= "1.48.0", features= [ "full"]}
+uuid = { version = "1.18.1", features = ["v4"] }
+
+[dev-dependencies]
+async-trait = "0.1.89"

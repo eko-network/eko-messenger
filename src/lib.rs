@@ -2,14 +2,14 @@ pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
 use crate::{
-    auth::{Auth, login_handler},
+    auth::{login_handler, logout_handler, refresh_token_handler, Auth},
     firebase_auth::FirebaseAuth,
 };
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use axum::{
-    Router,
     response::Html,
     routing::{get, post},
+    Router,
 };
 use std::{env::var_os, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
@@ -44,6 +44,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(root_handler))
         .route("/api/v1/login", post(login_handler))
+        .route("/api/v1/refresh", post(refresh_token_handler))
+        .route("/api/v1/logout", post(logout_handler))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
