@@ -5,10 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{AppState, errors::AppError};
-
 const ACCESS_TOKEN_EXPIRATION_SECONDS: u64 = 60 * 15; // 15 minutes
-use crate::errors::AppError;
-use crate::AppState;
 #[derive(Deserialize)]
 pub struct LoginRequest {
     pub email: String,
