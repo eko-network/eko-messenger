@@ -1,7 +1,6 @@
 use axum::{
-    Json,
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Json, Response},
 };
 use serde_json::json;
 
@@ -36,8 +35,11 @@ impl IntoResponse for AppError {
     }
 }
 
-impl From<anyhow::Error> for AppError {
-    fn from(e: anyhow::Error) -> Self {
-        AppError::InternalError(e)
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        AppError::InternalError(err.into())
     }
 }

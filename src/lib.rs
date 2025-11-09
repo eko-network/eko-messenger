@@ -2,12 +2,14 @@ pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
+pub mod outbox;
 
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
+    outbox::post_to_outbox,
 };
 use anyhow::Context;
 use axum::{
@@ -16,12 +18,14 @@ use axum::{
     response::{Html, Json},
     routing::{get, post},
 };
+use redis::aio::MultiplexedConnection;
 use serde::Deserialize;
 use std::{env::var, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
 #[derive(Clone)]
 pub struct AppState {
+    redis: MultiplexedConnection,
     auth: Arc<Auth<FirebaseAuth>>,
     domain: String,
 }
@@ -50,6 +54,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
 
     let app_state = AppState {
+        redis: redis.clone(),
         auth: Arc::new(auth),
         domain,
     };
@@ -59,6 +64,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/v1/login", post(login_handler))
         .route("/api/v1/refresh", post(refresh_token_handler))
         .route("/api/v1/logout", post(logout_handler))
+        .route("/api/v1/outbox", post(post_to_outbox))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{username}", get(actor_handler))
         .with_state(app_state);
