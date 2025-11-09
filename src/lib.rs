@@ -4,24 +4,26 @@ pub mod errors;
 pub mod firebase_auth;
 
 use crate::{
-    auth::{login_handler, logout_handler, refresh_token_handler, Auth},
+    activitypub::Person,
+    auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
 };
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use axum::{
     Router,
-    extract::{Path, Query},
+    extract::{Path, Query, State},
     response::{Html, Json},
     routing::{get, post},
 };
 use serde::Deserialize;
-use std::{env::var_os, net::SocketAddr, sync::Arc};
+use std::{env::var, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
 #[derive(Clone)]
 pub struct AppState {
     auth: Arc<Auth<FirebaseAuth>>,
+    domain: String,
 }
 
 #[derive(Deserialize)]
@@ -30,10 +32,7 @@ pub struct WebFingerQuery {
 }
 
 async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
-    let url = var_os("REDIS_URL")
-        .expect("REDIS_URL not found in enviroment")
-        .into_string()
-        .map_err(|_| anyhow!("Failed to convert from OsString to String"))?;
+    let url = var("REDIS_URL").context("REDIS_URL not found in environment")?;
 
     let client = redis::Client::open(url).context("Failed to connect to redis")?;
 
@@ -48,8 +47,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let redis = redis_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
     let auth = Auth::new(firebase_auth, redis.clone());
+    let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+
     let app_state = AppState {
         auth: Arc::new(auth),
+        domain,
     };
 
     let app = Router::new()
@@ -97,6 +99,7 @@ async fn root_handler() -> Html<&'static str> {
 }
 
 async fn webfinger_handler(
+    State(state): State<AppState>,
     Query(query): Query<WebFingerQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let resource = query.resource;
@@ -111,14 +114,13 @@ async fn webfinger_handler(
     let username = parts[0];
     let domain = parts[1];
 
-    let server_domain = "127.0.0.1:3000";
-    if domain != server_domain {
+    if domain != state.domain {
         return Err(AppError::NotFound(
             "User not found on this domain".to_string(),
         ));
     }
 
-    let actor_url = format!("http://{}/users/{}", server_domain, username);
+    let actor_url = format!("http://{}/users/{}", state.domain, username);
 
     let jrd = serde_json::json!({
         "subject": resource,
@@ -134,8 +136,11 @@ async fn webfinger_handler(
     Ok(Json(jrd))
 }
 
-async fn actor_handler(Path(username): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
-    let server_domain = "127.0.0.1:3000";
-    let actor = activitypub::create_actor(&username, server_domain);
+async fn actor_handler(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> Result<Json<Person>, AppError> {
+    let actor = activitypub::create_actor(&username, &state.domain);
+
     Ok(Json(actor))
 }
