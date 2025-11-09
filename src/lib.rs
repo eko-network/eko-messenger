@@ -25,9 +25,9 @@ use tokio::net::TcpListener;
 
 #[derive(Clone)]
 pub struct AppState {
-    redis: MultiplexedConnection,
-    auth: Arc<Auth<FirebaseAuth>>,
-    domain: String,
+    pub redis: MultiplexedConnection,
+    pub auth: Arc<Auth<FirebaseAuth>>,
+    pub domain: String,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +47,18 @@ async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
     Ok(redis_conn)
 }
 
+pub fn app(app_state: AppState) -> Router {
+    Router::new()
+        .route("/", get(root_handler))
+        .route("/api/v1/login", post(login_handler))
+        .route("/api/v1/refresh", post(refresh_token_handler))
+        .route("/api/v1/logout", post(logout_handler))
+        .route("/api/v1/outbox", post(post_to_outbox))
+        .route("/.well-known/webfinger", get(webfinger_handler))
+        .route("/users/{username}", get(actor_handler))
+        .with_state(app_state)
+}
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let redis = redis_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
@@ -59,15 +71,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         domain,
     };
 
-    let app = Router::new()
-        .route("/", get(root_handler))
-        .route("/api/v1/login", post(login_handler))
-        .route("/api/v1/refresh", post(refresh_token_handler))
-        .route("/api/v1/logout", post(logout_handler))
-        .route("/api/v1/outbox", post(post_to_outbox))
-        .route("/.well-known/webfinger", get(webfinger_handler))
-        .route("/users/{username}", get(actor_handler))
-        .with_state(app_state);
+    let app = app(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Server listening on http://{}", addr);
