@@ -234,8 +234,9 @@ impl<T: IdentityProvider> Auth<T> {
             let response = LoginResponse {
                 access_token: new_access_token,
                 expires_in: REFRESH_EXPIRATION,
-                refresh_token: refresh_token,
+                refresh_token: refresh_token.clone(),
             };
+            println!("{:?} {:?}", old_refresh_token, refresh_token);
             Ok(Json(response))
         } else {
             Err(AppError::Unauthorized("Invalid refresh token".into()))
@@ -269,6 +270,7 @@ pub async fn login_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
+    println!("{:?}", req);
     state
         .auth
         .login(req, &ip.to_string(), &user_agent.to_string())

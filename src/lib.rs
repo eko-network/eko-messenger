@@ -14,7 +14,7 @@ use crate::{
     middleware::auth_middleware,
     outbox::post_to_outbox,
 };
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
@@ -22,9 +22,14 @@ use axum::{
     response::{Html, Json},
     routing::{get, post},
 };
+use axum_client_ip::{ClientIpSource, RightmostXForwardedFor};
 use redis::aio::MultiplexedConnection;
 use serde::Deserialize;
-use std::{env::var, net::SocketAddr, sync::Arc};
+use std::{
+    env::{self, var},
+    net::SocketAddr,
+    sync::Arc,
+};
 use tokio::net::TcpListener;
 
 #[derive(Clone)]
@@ -51,12 +56,13 @@ async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
     Ok(redis_conn)
 }
 
-pub fn app(app_state: AppState) -> Router {
-        let protected_routes = Router::new()
+pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
+    let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
-    Router::new()
+    let ip_source: ClientIpSource = ip_source_str.parse()?;
+    Ok(Router::new()
         .route("/", get(root_handler))
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/refresh", post(refresh_token_handler))
@@ -64,10 +70,11 @@ pub fn app(app_state: AppState) -> Router {
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{username}", get(actor_handler))
         .merge(protected_routes)
-        .with_state(app_state)
+        .layer(ip_source.into_extension())
+        .with_state(app_state))
 }
-
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let redis = redis_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
     let auth = Auth::new(firebase_auth, redis.clone());
@@ -79,15 +86,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         domain,
     };
 
-
-    let app = app(app_state);
+    let app = app(app_state, ip_source)?;
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Server listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await?;
 
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
