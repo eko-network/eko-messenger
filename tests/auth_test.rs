@@ -43,30 +43,23 @@ async fn test_login_and_verify_token() {
         device_name: device_name.clone(),
     };
 
-    let login_res = auth.login(login_req).await.unwrap();
-
-    assert!(!login_res.user_id.is_empty());
-    assert!(!login_res.access_token.is_empty());
-    assert!(!login_res.refresh_token.is_empty());
-    assert_eq!(login_res.device_id, device_name);
-
-    let (user_id, device_id) = auth
-        .verify_token(&login_res.access_token)
+    let login_res = auth
+        .login(login_req, "127.0.0.1", "test-agent")
         .await
-        .unwrap()
         .unwrap();
 
-    assert_eq!(user_id, login_res.user_id);
-    assert_eq!(device_id, device_name);
+    assert!(!login_res.access_token.is_empty());
+    assert!(!login_res.refresh_token.is_empty());
+
+    let claims = auth
+        .verify_access_token(&login_res.access_token)
+        .unwrap();
+
+    assert!(!claims.sub.is_empty());
 
     // Clean up redis
     let _: () = redis::cmd("DEL")
-        .arg(format!("token:{}", login_res.access_token))
-        .query_async(&mut conn)
-        .await
-        .unwrap();
-    let _: () = redis::cmd("DEL")
-        .arg(format!("token:{}", login_res.refresh_token))
+        .arg(format!("rt:{}", login_res.refresh_token))
         .query_async(&mut conn)
         .await
         .unwrap();
@@ -102,34 +95,52 @@ async fn test_refresh_token() {
         device_name: device_name.clone(),
     };
 
-    let login_res = auth.login(login_req).await.unwrap();
+    let login_res = auth
+        .login(login_req, "127.0.0.1", "test-agent")
+        .await
+        .unwrap();
 
-    let refresh_res = auth.refresh_token(&login_res.refresh_token).await.unwrap();
+    println!(
+        "[test_refresh_token] Refresh token from login: {}",
+        login_res.refresh_token
+    );
+
+    let redis_key = format!("rt:{}", login_res.refresh_token);
+    let value: Option<String> = redis::cmd("HGET")
+        .arg(&redis_key)
+        .arg("userId")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+    println!(
+        "[test_refresh_token] Value from redis for key {}: {:?}",
+        redis_key, value
+    );
+
+    let refresh_res = auth
+        .refresh_token(&login_res.refresh_token, "127.0.0.1", "test-agent")
+        .await
+        .unwrap();
 
     assert!(!refresh_res.access_token.is_empty());
 
-    let (user_id, device_id) = auth
-        .verify_token(&refresh_res.access_token)
-        .await
-        .unwrap()
+    let claims = auth
+        .verify_access_token(&refresh_res.access_token)
         .unwrap();
 
-    assert_eq!(user_id, login_res.user_id);
-    assert_eq!(device_id, device_name);
+    let first_claims = auth
+        .verify_access_token(&login_res.access_token)
+        .unwrap();
+    assert_eq!(claims.sub, first_claims.sub);
 
     // Clean up redis
     let _: () = redis::cmd("DEL")
-        .arg(format!("token:{}", login_res.access_token))
+        .arg(format!("rt:{}", refresh_res.refresh_token))
         .query_async(&mut conn)
         .await
         .unwrap();
     let _: () = redis::cmd("DEL")
-        .arg(format!("token:{}", login_res.refresh_token))
-        .query_async(&mut conn)
-        .await
-        .unwrap();
-    let _: () = redis::cmd("DEL")
-        .arg(format!("token:{}", refresh_res.access_token))
+        .arg(format!("user_rt:{}", claims.sub))
         .query_async(&mut conn)
         .await
         .unwrap();
@@ -165,15 +176,22 @@ async fn test_logout() {
         device_name: device_name.clone(),
     };
 
-    let login_res = auth.login(login_req).await.unwrap();
-
-    auth.logout(&login_res.access_token, &login_res.refresh_token)
+    let login_res = auth
+        .login(login_req, "127.0.0.1", "test-agent")
         .await
         .unwrap();
 
-    let access_token_verification = auth.verify_token(&login_res.access_token).await.unwrap();
-    assert!(access_token_verification.is_none());
+    let claims = auth
+        .verify_access_token(&login_res.access_token)
+        .unwrap();
+    let user_id = claims.sub;
 
-    let refresh_token_verification = auth.verify_token(&login_res.refresh_token).await.unwrap();
-    assert!(refresh_token_verification.is_none());
+    auth.logout(&login_res.refresh_token, &user_id)
+        .await
+        .unwrap();
+
+    let refresh_result = auth
+        .refresh_token(&login_res.refresh_token, "127.0.0.1", "test-agent")
+        .await;
+    assert!(refresh_result.is_err());
 }

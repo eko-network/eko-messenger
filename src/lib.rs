@@ -2,13 +2,17 @@ pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
+mod jwt_helper;
+pub mod middleware;
 
 use crate::{
-    auth::{login_handler, logout_handler, refresh_token_handler, Auth},
+    auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
+    middleware::auth_middleware,
 };
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
+use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
     extract::{Path, Query},
@@ -52,13 +56,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         auth: Arc::new(auth),
     };
 
+    let protected_routes = Router::new()
+        .route("/auth/logout", post(logout_handler))
+        // you can add more routes here
+        .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
+
     let app = Router::new()
         .route("/", get(root_handler))
-        .route("/api/v1/login", post(login_handler))
-        .route("/api/v1/refresh", post(refresh_token_handler))
-        .route("/api/v1/logout", post(logout_handler))
+        .route("/auth/login", post(login_handler))
+        .route("/auth/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{username}", get(actor_handler))
+        .merge(protected_routes)
         .with_state(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
