@@ -2,7 +2,8 @@ pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
-mod jwt_helper;
+pub mod inbox;
+pub mod jwt_helper;
 pub mod middleware;
 pub mod outbox;
 
@@ -11,6 +12,7 @@ use crate::{
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
+    inbox::get_inbox,
     middleware::auth_middleware,
     outbox::post_to_outbox,
 };
@@ -59,6 +61,8 @@ async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
+        .route("/api/v1/outbox", post(post_to_outbox))
+        .route("/api/v1/inbox", get(get_inbox))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -66,7 +70,6 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route("/", get(root_handler))
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/refresh", post(refresh_token_handler))
-        .route("/api/v1/outbox", post(post_to_outbox))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{username}", get(actor_handler))
         .merge(protected_routes)

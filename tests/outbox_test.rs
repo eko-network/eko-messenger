@@ -12,6 +12,8 @@ async fn test_post_to_outbox() {
     let recipient_username = "recipient";
     let message_content = "Hello from an integration test!";
 
+    let token = common::generate_test_token(sender_username);
+
     let payload = json!({
         "sender_username": sender_username,
         "recipient_username": recipient_username,
@@ -20,6 +22,7 @@ async fn test_post_to_outbox() {
 
     let response = client
         .post(&format!("{}/api/v1/outbox", &app.address))
+        .bearer_auth(token)
         .json(&payload)
         .send()
         .await
@@ -64,4 +67,29 @@ async fn test_post_to_outbox() {
     let _: () = con
         .del(&outbox_key)
         .expect("Failed to clean up outbox key.");
+}
+
+#[tokio::test]
+async fn test_post_to_outbox_unauthenticated() {
+    let app = common::spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let sender_username = "testuser";
+    let recipient_username = "recipient";
+    let message_content = "Hello from an integration test!";
+
+    let payload = json!({
+        "sender_username": sender_username,
+        "recipient_username": recipient_username,
+        "content": message_content
+    });
+
+    let response = client
+        .post(&format!("{}/api/v1/outbox", &app.address))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to execute request.");
+
+    assert_eq!(response.status().as_u16(), 401);
 }

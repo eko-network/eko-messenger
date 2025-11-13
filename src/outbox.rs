@@ -2,9 +2,15 @@ use crate::{
     AppState,
     activitypub::{CreateActivity, Note},
     errors::AppError,
+    jwt_helper::Claims,
 };
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Extension, State},
+    http::StatusCode,
+};
 use serde::Deserialize;
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -16,8 +22,14 @@ pub struct OutboxPayload {
 
 pub async fn post_to_outbox(
     State(state): State<AppState>,
+    Extension(claims): Extension<Arc<Claims>>,
     Json(payload): Json<OutboxPayload>,
 ) -> Result<StatusCode, AppError> {
+    if claims.sub != payload.sender_username {
+        return Err(AppError::Unauthorized(
+            "Sender username does not match token".to_string(),
+        ));
+    }
     let mut con = state.redis.clone();
 
     let domain = &state.domain;
@@ -49,6 +61,7 @@ pub async fn post_to_outbox(
     let outbox_key = format!("outbox:{}", sender_username);
     let activity_json = serde_json::to_string(&activity)?;
 
+    // TODO: outbox needs to be activitystreams ordered collection
     let _: () = redis::cmd("LPUSH")
         .arg(outbox_key)
         .arg(activity_json)
