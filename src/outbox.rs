@@ -64,6 +64,15 @@ pub async fn post_to_outbox(
     // TODO: outbox needs to be activitystreams ordered collection
     let _: () = redis::cmd("LPUSH")
         .arg(outbox_key)
+        .arg(&activity_json)
+        .query_async(&mut con)
+        .await?;
+
+    // TODO: check if recipient exists on local server
+    // TODO: inbox also needs to be activitystreams ordered collection
+    let inbox_key = format!("inbox:{}", recipient_username);
+    let _: () = redis::cmd("LPUSH")
+        .arg(inbox_key)
         .arg(activity_json)
         .query_async(&mut con)
         .await?;

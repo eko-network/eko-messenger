@@ -1,9 +1,10 @@
 use eko_messenger::{
-    jwt_helper::JwtHelper, AppState, app, auth::Auth, firebase_auth::FirebaseAuth,
+    AppState, app, auth::Auth, firebase_auth::FirebaseAuth, jwt_helper::JwtHelper,
 };
 use redis::Client;
 use std::{env, sync::Arc};
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
 pub struct TestApp {
     pub address: String,
@@ -14,6 +15,9 @@ pub struct TestApp {
 pub fn generate_test_token(username: &str) -> String {
     let jwt_helper = JwtHelper::new_from_env().unwrap();
     jwt_helper.create_jwt(username).unwrap()
+}
+pub fn generate_user_id() -> String {
+    Uuid::new_v4().to_string()
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -44,8 +48,8 @@ pub async fn spawn_app() -> TestApp {
         domain: domain.clone(),
     };
 
-    let app_router =
-        app(app_state, "ConnectInfo".to_string()).expect("Failed to build Axum router in test setup");
+    let app_router = app(app_state, "ConnectInfo".to_string())
+        .expect("Failed to build Axum router in test setup");
 
     tokio::spawn(async move {
         axum::serve(listener, app_router).await.unwrap();
@@ -57,3 +61,4 @@ pub async fn spawn_app() -> TestApp {
         domain,
     }
 }
+

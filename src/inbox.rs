@@ -15,6 +15,7 @@ pub async fn get_inbox(
 
     let inbox_key = format!("inbox:{}", username);
 
+    // TODO: dont get all messages
     let messages: Vec<String> = redis::cmd("lrange")
         .arg(inbox_key)
         .arg(0)

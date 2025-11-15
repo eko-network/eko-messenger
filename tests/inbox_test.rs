@@ -7,8 +7,8 @@ async fn test_get_from_inbox() {
     let app = common::spawn_app().await;
     let client = reqwest::Client::new();
 
-    let username = "testuser";
-    let token = common::generate_test_token(username);
+    let username = common::generate_user_id();
+    let token = common::generate_test_token(&username);
 
     // Manually populate the inbox
     let mut con = app
