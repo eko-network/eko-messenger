@@ -24,9 +24,10 @@ use axum::{
     response::{Html, Json},
     routing::{get, post},
 };
-use axum_client_ip::{ClientIpSource, RightmostXForwardedFor};
+use axum_client_ip::ClientIpSource;
 use redis::aio::MultiplexedConnection;
 use serde::Deserialize;
+use sqlx::{PgPool, Postgres};
 use std::{
     env::{self, var},
     net::SocketAddr,
@@ -39,6 +40,7 @@ pub struct AppState {
     pub redis: MultiplexedConnection,
     pub auth: Arc<Auth<FirebaseAuth>>,
     pub domain: String,
+    pub pool: PgPool,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +58,17 @@ async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
         .await
         .context("Failed to connect to redis")?;
     Ok(redis_conn)
+}
+
+async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
+    let database_url = var("DATABASE_URL").context("DATABASE_URL not found in environment")?;
+    let pool = PgPool::connect_lazy(&database_url).context("Failed to connect to Postgres")?;
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .context("Failed to run migrations")?;
+    Ok(pool)
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -78,15 +91,19 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
 }
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
+    // these shoudl be combined if we keep using redis
     let redis = redis_from_env().await?;
+    let pool = db_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
-    let auth = Auth::new(firebase_auth, redis.clone());
     let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+
+    let auth = Auth::new(firebase_auth, pool.clone());
 
     let app_state = AppState {
         redis: redis.clone(),
         auth: Arc::new(auth),
         domain,
+        pool: pool.clone(),
     };
 
     let app = app(app_state, ip_source)?;

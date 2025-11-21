@@ -5,8 +5,8 @@ use axum::{
 };
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
-use redis::{AsyncCommands, RedisResult, aio::MultiplexedConnection};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -42,30 +42,22 @@ pub trait IdentityProvider {
 
 pub struct Auth<T: IdentityProvider> {
     provider: T,
-    redis: MultiplexedConnection,
+    db_pool: PgPool,
     jwt_helper: JwtHelper,
 }
 
 impl<T: IdentityProvider> Auth<T> {
-    pub fn new(provider: T, redis: MultiplexedConnection) -> Self {
+    pub fn new(provider: T, db_pool: PgPool) -> Self {
         let jwt_helper = JwtHelper::new_from_env().expect("Could not instantiate JwtHelper");
         Self {
             provider: provider,
-            redis,
+            db_pool,
             jwt_helper,
         }
     }
 
     fn generate_token() -> String {
         Uuid::new_v4().to_string()
-    }
-
-    fn token_key(token: &str) -> String {
-        format!("rt:{}", token)
-    }
-
-    fn user_key(user_id: &str) -> String {
-        format!("user_rt:{}", user_id)
     }
     async fn store_new_token(
         &self,
@@ -74,50 +66,26 @@ impl<T: IdentityProvider> Auth<T> {
         ip_address: &str,
         device_name: &str,
         user_agent: &str,
-    ) -> RedisResult<()> {
-        let token_key = Self::token_key(token_str);
-        let user_key = Self::user_key(user_id);
+    ) -> Result<(), sqlx::Error> {
+        let expires_at =
+            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
 
-        let metadata = &[
-            ("userId", user_id),
-            ("ip", ip_address),
-            ("device_name", device_name),
-            ("user_agent", user_agent),
-            ("issuedAt", &chrono::Utc::now().to_rfc3339()),
-        ];
-
-        let mut con = self.redis.clone();
-        let _: () = redis::pipe()
-            .hset_multiple(&token_key, metadata)
-            .expire(&token_key, REFRESH_EXPIRATION)
-            .sadd(&user_key, &token_key)
-            .query_async(&mut con)
-            .await?;
+        sqlx::query!(
+            r#"
+            INSERT INTO refresh_tokens (token, user_id, ip_address, device_name, user_agent, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            token_str,
+            user_id,
+            ip_address,
+            device_name,
+            user_agent,
+            expires_at
+        )
+        .execute(&self.db_pool)
+        .await?;
 
         Ok(())
-    }
-
-    async fn validate_token(&self, token_str: &str) -> RedisResult<Option<String>> {
-        let token_key = Self::token_key(token_str);
-        let mut con = self.redis.clone();
-        let user_id: Option<String> = con.hget(&token_key, "userId").await?;
-        match user_id {
-            Some(uid) => {
-                let user_key = Self::user_key(&uid);
-                let is_in_set: bool = con.sismember(&user_key, &token_key).await?;
-                if is_in_set {
-                    Ok(Some(uid))
-                } else {
-                    // Token found, but invalid
-                    let _: () = con.del(&token_key).await?;
-                    Ok(None)
-                }
-            }
-            None => {
-                // No tekon found
-                Ok(None)
-            }
-        }
     }
 
     pub async fn rotate_refresh_token(
@@ -125,58 +93,75 @@ impl<T: IdentityProvider> Auth<T> {
         old_token_str: &str,
         request_ip: &str,
         request_user_agent: &str,
-    ) -> RedisResult<Option<(String, String)>> {
-        let mut con = self.redis.clone();
-        let user_id = match self.validate_token(old_token_str).await? {
-            Some(uid) => uid,
-            None => return Ok(None), // Token is invalid, expired, or already revoked
+    ) -> Result<Option<(String, String)>, sqlx::Error> {
+        let mut tx = self.db_pool.begin().await?;
+
+        let old_token = sqlx::query!(
+            "SELECT user_id, user_agent, device_name, expires_at FROM refresh_tokens WHERE token = $1",
+            old_token_str
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let (user_id, device_name) = match old_token {
+            Some(token) => {
+                if token.expires_at <= time::OffsetDateTime::now_utc() {
+                    sqlx::query!("DELETE FROM refresh_tokens WHERE token = $1", old_token_str)
+                        .execute(&mut *tx)
+                        .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+                if token.user_agent != request_user_agent {
+                    sqlx::query!("DELETE FROM refresh_tokens WHERE token = $1", old_token_str)
+                        .execute(&mut *tx)
+                        .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+                (token.user_id, token.device_name)
+            }
+            None => {
+                tx.commit().await?;
+                return Ok(None);
+            }
         };
 
-        let old_token_key = Self::token_key(old_token_str);
-        let (original_user_agent, device_name): (Option<String>, Option<String>) = con
-            .hmget(&old_token_key, &["user_agent", "device_name"])
+        sqlx::query!("DELETE FROM refresh_tokens WHERE token = $1", old_token_str)
+            .execute(&mut *tx)
             .await?;
 
-        if original_user_agent.as_deref() != Some(request_user_agent) {
-            self.revoke_token(&user_id, old_token_str).await?;
-            return Ok(None);
-        }
+        let new_token_str = Self::generate_token();
+        let expires_at =
+            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
+        sqlx::query!(
+            r#"
+            INSERT INTO refresh_tokens (token, user_id, ip_address, device_name, user_agent, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            new_token_str,
+            user_id,
+            request_ip,
+            device_name,
+            request_user_agent,
+            expires_at
+        )
+        .execute(&mut *tx)
+        .await?;
 
-        let new_token_str = Uuid::new_v4().to_string();
-
-        let new_token_key = Self::token_key(&new_token_str);
-        let user_key = Self::user_key(&user_id);
-
-        let metadata = &[
-            ("userId", user_id.as_str()),
-            ("ip", request_ip),
-            ("issuedAt", &chrono::Utc::now().to_rfc3339()),
-            ("user_agent", request_user_agent),
-            ("device_name", device_name.as_deref().unwrap_or_default()),
-        ];
-
-        let _: () = redis::pipe()
-            .del(&old_token_key)
-            .srem(&user_key, &old_token_key)
-            .hset_multiple(&new_token_key, metadata)
-            .expire(&new_token_key, REFRESH_EXPIRATION)
-            .sadd(&user_key, &new_token_key)
-            .query_async(&mut con)
-            .await?;
+        tx.commit().await?;
 
         Ok(Some((new_token_str, user_id)))
     }
 
-    async fn revoke_token(&self, user_id: &str, token_str: &str) -> RedisResult<()> {
-        let token_key = Self::token_key(token_str);
-        let user_key = Self::user_key(user_id);
-
-        let mut con = self.redis.clone();
-        let _: () = redis::pipe()
-            .del(&token_key)
-            .srem(&user_key, &token_key)
-            .query_async(&mut con)
-            .await?;
+    async fn revoke_token(&self, user_id: &str, token_str: &str) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "DELETE FROM refresh_tokens WHERE token = $1 AND user_id = $2",
+            token_str,
+            user_id
+        )
+        .execute(&self.db_pool)
+        .await?;
 
         Ok(())
     }
@@ -252,7 +237,7 @@ impl<T: IdentityProvider> Auth<T> {
     }
 
     pub fn verify_access_token(&self, token: &str) -> Result<Claims, AppError> {
-        let now = chrono::Utc::now().timestamp() as usize;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp() as usize;
 
         let data: jsonwebtoken::TokenData<Claims> = self
             .jwt_helper

@@ -1,3 +1,4 @@
+.postgres-data/
 .direnv/
 .env
 .valkey-data/

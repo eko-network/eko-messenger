@@ -31,9 +31,11 @@
             cargo-watch
             valkey
             process-compose
+            postgresql
 
             pkg-config
             openssl
+            sqlx-cli
           ];
           shellHook = ''
             mkdir -p .valkey-data

@@ -1,6 +1,6 @@
 use std::env::var_os;
 
-use chrono::{Duration, Utc};
+use time::{Duration, OffsetDateTime};
 use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };
@@ -34,10 +34,10 @@ impl JwtHelper {
         })
     }
     pub fn create_jwt(&self, user_id: &str) -> Result<String, jsonwebtoken::errors::Error> {
-        let now = Utc::now();
-        let iat = now.timestamp() as usize;
+        let now = OffsetDateTime::now_utc();
+        let iat = now.unix_timestamp() as usize;
         // Set expiration to 15 minutes from now
-        let exp = (now + Duration::minutes(15)).timestamp() as usize;
+        let exp = (now + Duration::minutes(15)).unix_timestamp() as usize;
 
         let claims = Claims {
             sub: user_id.to_string(),

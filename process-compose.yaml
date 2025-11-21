@@ -1,6 +1,23 @@
 version: "0.5"
-
 processes:
+  postgres:
+    command: >
+      bash -c "
+        mkdir -p .postgres-data &&
+        [ ! -f .postgres-data/PG_VERSION ] && initdb -D .postgres-data -U postgres;
+        (until pg_isready -U postgres -h localhost; do sleep 1; done && sqlx migrate run) &
+        postgres -D .postgres-data -c unix_socket_directories=.
+      "
+    readiness_probe:
+      exec:
+        command: "pg_isready -U postgres -h localhost"
+      initial_delay_seconds: 2
+      period_seconds: 1
+    availability:
+      restart: on_failure
+    environment:
+      - PGUSER=postgres
+  
   valkey:
     command: valkey-server --dir .valkey-data --dbfilename dump.rdb --port 6379
     readiness_probe:
