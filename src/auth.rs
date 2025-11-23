@@ -1,13 +1,10 @@
-use axum::{
-    Json,
-    extract::{Extension, State},
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
 use serde::{Deserialize, Serialize};
+use serde_with::base64::Base64;
+use serde_with::serde_as;
 use sqlx::PgPool;
-use std::sync::Arc;
 use uuid::Uuid;
 
 pub const REFRESH_EXPIRATION: i64 = 60 * 60 * 24 * 31;
@@ -18,18 +15,48 @@ use crate::{
     jwt_helper::{Claims, JwtHelper},
 };
 use jsonwebtoken;
+
+#[serde_as]
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PreKey {
+    pub id: i32,
+    #[serde_as(as = "Base64")]
+    pub key: Vec<u8>,
+}
+
+#[serde_as]
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedPreKey {
+    pub id: i32,
+    #[serde_as(as = "Base64")]
+    pub key: Vec<u8>,
+    #[serde_as(as = "Base64")]
+    pub signature: Vec<u8>,
+}
+
+#[serde_as]
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
     pub device_name: String,
+    pub device_id: String,
+    #[serde_as(as = "Base64")]
+    pub identity_key: Vec<u8>,
+    pub registration_id: i32,
+    pub pre_keys: Vec<PreKey>,
+    pub signed_pre_key: SignedPreKey,
 }
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
-    pub expires_in: i64,
+    pub expires_at: String,
 }
 
 pub trait IdentityProvider {
@@ -59,31 +86,78 @@ impl<T: IdentityProvider> Auth<T> {
     fn generate_token() -> String {
         Uuid::new_v4().to_string()
     }
-    async fn store_new_token(
+
+    async fn store_login_data(
         &self,
         user_id: &str,
-        token_str: &str,
+        req: &LoginRequest,
         ip_address: &str,
-        device_name: &str,
         user_agent: &str,
-    ) -> Result<(), sqlx::Error> {
-        let expires_at =
-            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
+        refresh_token: &str,
+        expires_at: &time::OffsetDateTime,
+    ) -> Result<(), AppError> {
+        let mut tx = self.db_pool.begin().await?;
 
+        // Device
         sqlx::query!(
             r#"
-            INSERT INTO refresh_tokens (token, user_id, ip_address, device_name, user_agent, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO devices (id, user_id, name, identity_key, registration_id)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
-            token_str,
+            req.device_id,
             user_id,
+            req.device_name,
+            req.identity_key,
+            req.registration_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Refresh token
+        sqlx::query!(
+            r#"
+            INSERT INTO refresh_tokens (token, device_id, ip_address, user_agent, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+            refresh_token,
+            req.device_id,
             ip_address,
-            device_name,
             user_agent,
             expires_at
         )
-        .execute(&self.db_pool)
+        .execute(&mut *tx)
         .await?;
+
+        // Pre keys
+        for pre_key in &req.pre_keys {
+            sqlx::query!(
+                r#"
+                INSERT INTO pre_keys (device_id, key_id, key)
+                VALUES ($1, $2, $3)
+                "#,
+                req.device_id,
+                pre_key.id,
+                pre_key.key
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Signed pre key
+        sqlx::query!(
+            r#"
+            INSERT INTO signed_pre_keys (device_id, key_id, key, signature)
+            VALUES ($1, $2, $3, $4)
+            "#,
+            req.device_id,
+            req.signed_pre_key.id,
+            req.signed_pre_key.key,
+            req.signed_pre_key.signature
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
 
         Ok(())
     }
@@ -93,17 +167,17 @@ impl<T: IdentityProvider> Auth<T> {
         old_token_str: &str,
         request_ip: &str,
         request_user_agent: &str,
-    ) -> Result<Option<(String, String)>, sqlx::Error> {
+    ) -> Result<Option<(String, String, time::OffsetDateTime)>, sqlx::Error> {
         let mut tx = self.db_pool.begin().await?;
 
         let old_token = sqlx::query!(
-            "SELECT user_id, user_agent, device_name, expires_at FROM refresh_tokens WHERE token = $1",
+            "SELECT device_id, user_agent, expires_at FROM refresh_tokens WHERE token = $1",
             old_token_str
         )
         .fetch_optional(&mut *tx)
         .await?;
 
-        let (user_id, device_name) = match old_token {
+        let device_id = match old_token {
             Some(token) => {
                 if token.expires_at <= time::OffsetDateTime::now_utc() {
                     sqlx::query!("DELETE FROM refresh_tokens WHERE token = $1", old_token_str)
@@ -119,7 +193,7 @@ impl<T: IdentityProvider> Auth<T> {
                     tx.commit().await?;
                     return Ok(None);
                 }
-                (token.user_id, token.device_name)
+                token.device_id
             }
             None => {
                 tx.commit().await?;
@@ -136,13 +210,12 @@ impl<T: IdentityProvider> Auth<T> {
             time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
         sqlx::query!(
             r#"
-            INSERT INTO refresh_tokens (token, user_id, ip_address, device_name, user_agent, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO refresh_tokens (token, device_id, ip_address, user_agent, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
             new_token_str,
-            user_id,
+            device_id,
             request_ip,
-            device_name,
             request_user_agent,
             expires_at
         )
@@ -151,20 +224,9 @@ impl<T: IdentityProvider> Auth<T> {
 
         tx.commit().await?;
 
-        Ok(Some((new_token_str, user_id)))
+        Ok(Some((new_token_str, device_id, expires_at)))
     }
 
-    async fn revoke_token(&self, user_id: &str, token_str: &str) -> Result<(), sqlx::Error> {
-        sqlx::query!(
-            "DELETE FROM refresh_tokens WHERE token = $1 AND user_id = $2",
-            token_str,
-            user_id
-        )
-        .execute(&self.db_pool)
-        .await?;
-
-        Ok(())
-    }
     pub async fn login(
         &self,
         req: LoginRequest,
@@ -173,29 +235,32 @@ impl<T: IdentityProvider> Auth<T> {
     ) -> Result<Json<LoginResponse>, AppError> {
         let uid = self
             .provider
-            .login_with_email(req.email.clone(), req.password)
+            //FIXME pointles clone
+            .login_with_email(req.email.clone(), req.password.clone())
             .await?;
 
         let access_token = self
             .jwt_helper
-            .create_jwt(&uid)
+            .create_jwt(&req.device_id)
             .map_err(|e| anyhow::anyhow!(e))?;
         let refresh_token = Self::generate_token();
 
-        self.store_new_token(
+        let expires_at =
+            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
+        self.store_login_data(
             &uid,
-            &refresh_token,
+            &req,
             ip_address,
-            &req.device_name,
             user_agent,
+            &refresh_token,
+            &expires_at,
         )
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+        .await?;
 
         let response = LoginResponse {
             access_token,
             refresh_token,
-            expires_in: REFRESH_EXPIRATION,
+            expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
         };
 
         Ok(Json(response))
@@ -207,18 +272,18 @@ impl<T: IdentityProvider> Auth<T> {
         ip_address: &str,
         user_agent: &str,
     ) -> Result<Json<LoginResponse>, AppError> {
-        if let Some((refresh_token, user_id)) = self
+        if let Some((refresh_token, device_id, expires_at)) = self
             .rotate_refresh_token(old_refresh_token, ip_address, user_agent)
             .await
             .map_err(|e| anyhow::anyhow!(e))?
         {
             let new_access_token = self
                 .jwt_helper
-                .create_jwt(&user_id)
+                .create_jwt(&device_id)
                 .map_err(|e| anyhow::anyhow!(e))?;
             let response = LoginResponse {
                 access_token: new_access_token,
-                expires_in: REFRESH_EXPIRATION,
+                expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
                 refresh_token: refresh_token.clone(),
             };
             println!("{:?} {:?}", old_refresh_token, refresh_token);
@@ -228,10 +293,19 @@ impl<T: IdentityProvider> Auth<T> {
         }
     }
 
-    pub async fn logout(&self, refresh_token: &str, user_id: &str) -> Result<(), AppError> {
-        self.revoke_token(user_id, refresh_token)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+    pub async fn logout(&self, refresh_token: &str) -> Result<(), AppError> {
+        let mut tx = self.db_pool.begin().await?;
+
+        sqlx::query!(
+            r#"
+            DELETE FROM devices WHERE id = (SELECT device_id FROM refresh_tokens WHERE token = $1)
+            "#,
+            refresh_token
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
 
         Ok(())
     }
@@ -286,9 +360,8 @@ pub struct LogoutRequest {
 
 pub async fn logout_handler(
     State(state): State<AppState>,
-    Extension(claims): Extension<Arc<Claims>>,
     Json(req): Json<LogoutRequest>,
 ) -> Result<StatusCode, AppError> {
-    state.auth.logout(&req.refresh_token, &claims.sub).await?;
+    state.auth.logout(&req.refresh_token).await?;
     Ok(StatusCode::OK)
 }
