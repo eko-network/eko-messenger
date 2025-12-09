@@ -18,12 +18,3 @@ processes:
     environment:
       - PGUSER=postgres
   
-  valkey:
-    command: valkey-server --dir .valkey-data --dbfilename dump.rdb --port 6379
-    readiness_probe:
-      exec:
-        command: "valkey-cli ping"
-      initial_delay_seconds: 1
-      period_seconds: 1
-    availability:
-      restart: on_failure

@@ -29,7 +29,6 @@
             # Rust toolchain
             rust-bin.stable.latest.default
             cargo-watch
-            valkey
             process-compose
             postgresql
 
@@ -38,7 +37,6 @@
             sqlx-cli
           ];
           shellHook = ''
-            mkdir -p .valkey-data
             export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
           '';
         };

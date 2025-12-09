@@ -2,19 +2,19 @@ pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
-pub mod inbox;
+// pub mod inbox;
 pub mod jwt_helper;
 pub mod middleware;
-pub mod outbox;
+// pub mod outbox;
 
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
-    inbox::get_inbox,
+    // inbox::get_inbox,
     middleware::auth_middleware,
-    outbox::post_to_outbox,
+    // outbox::post_to_outbox,
 };
 use anyhow::Context;
 use axum::middleware::from_fn_with_state;
@@ -25,7 +25,6 @@ use axum::{
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
-use redis::aio::MultiplexedConnection;
 use serde::Deserialize;
 use sqlx::{PgPool, Postgres};
 use std::{
@@ -37,7 +36,6 @@ use tokio::net::TcpListener;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub redis: MultiplexedConnection,
     pub auth: Arc<Auth<FirebaseAuth>>,
     pub domain: String,
     pub pool: PgPool,
@@ -46,18 +44,6 @@ pub struct AppState {
 #[derive(Deserialize)]
 pub struct WebFingerQuery {
     resource: String,
-}
-
-async fn redis_from_env() -> anyhow::Result<redis::aio::MultiplexedConnection> {
-    let url = var("REDIS_URL").context("REDIS_URL not found in environment")?;
-
-    let client = redis::Client::open(url).context("Failed to connect to redis")?;
-
-    let redis_conn = client
-        .get_multiplexed_tokio_connection()
-        .await
-        .context("Failed to connect to redis")?;
-    Ok(redis_conn)
 }
 
 async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
@@ -74,8 +60,8 @@ async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
-        .route("/api/v1/outbox", post(post_to_outbox))
-        .route("/api/v1/inbox", get(get_inbox))
+        // .route("/api/v1/outbox", post(post_to_outbox))
+        // .route("/api/v1/inbox", get(get_inbox))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -91,8 +77,6 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
 }
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
-    // these shoudl be combined if we keep using redis
-    let redis = redis_from_env().await?;
     let pool = db_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
     let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
@@ -100,7 +84,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let auth = Auth::new(firebase_auth, pool.clone());
 
     let app_state = AppState {
-        redis: redis.clone(),
         auth: Arc::new(auth),
         domain,
         pool: pool.clone(),
