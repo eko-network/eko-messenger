@@ -232,12 +232,15 @@ impl<T: IdentityProvider> Auth<T> {
         req: LoginRequest,
         ip_address: &str,
         user_agent: &str,
+        domain: &str,
     ) -> Result<Json<LoginResponse>, AppError> {
         let uid = self
             .provider
-            //FIXME pointles clone
+            //FIXME: pointles clone
             .login_with_email(req.email.clone(), req.password.clone())
             .await?;
+
+        self.create_actor(&uid, &req.email, domain).await?;
 
         let access_token = self
             .jwt_helper
@@ -264,6 +267,40 @@ impl<T: IdentityProvider> Auth<T> {
         };
 
         Ok(Json(response))
+    }
+
+    async fn create_actor(&self, user_id: &str, email: &str, domain: &str) -> Result<(), AppError> {
+        let existing_actor = sqlx::query!("SELECT id FROM actors WHERE user_id = $1", user_id)
+            .fetch_optional(&self.db_pool)
+            .await?;
+
+        if existing_actor.is_some() {
+            return Ok(());
+        }
+
+        let username = email
+            .split('@')
+            .next()
+            .expect("Failed to parse username from email");
+
+        let actor_url = format!("https://{}/users/{}", domain, username);
+        let inbox_url = format!("https://{}/users/{}/inbox", domain, username);
+        let outbox_url = format!("https://{}/users/{}/outbox", domain, username);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO actors (actor_url, is_local, inbox_url, outbox_url, user_id)
+            VALUES ($1, true, $2, $3, $4)
+            "#,
+            actor_url,
+            inbox_url,
+            outbox_url,
+            user_id
+        )
+        .execute(&self.db_pool)
+        .await?;
+
+        Ok(())
     }
 
     pub async fn refresh_token(
@@ -332,7 +369,7 @@ pub async fn login_handler(
     println!("{:?}", req);
     state
         .auth
-        .login(req, &ip.to_string(), &user_agent.to_string())
+        .login(req, &ip.to_string(), &user_agent.to_string(), &state.domain)
         .await
 }
 

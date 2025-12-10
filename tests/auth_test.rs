@@ -46,7 +46,7 @@ async fn test_login_and_verify_token() {
     let login_req = generate_login_request(email, password);
 
     let login_res = auth
-        .login(login_req, "127.0.0.1", "test-agent")
+        .login(login_req, "127.0.0.1", "test-agent", &app.domain)
         .await
         .unwrap();
 
@@ -73,7 +73,7 @@ async fn test_refresh_token() {
     let login_req = generate_login_request(email, password);
 
     let login_res = auth
-        .login(login_req, "127.0.0.1", "test-agent")
+        .login(login_req, "127.0.0.1", "test-agent", &app.domain)
         .await
         .unwrap();
 
@@ -105,7 +105,7 @@ async fn test_logout() {
     let login_req = generate_login_request(email, password);
 
     let login_res = auth
-        .login(login_req, "127.0.0.1", "test-agent")
+        .login(login_req, "127.0.0.1", "test-agent", &app.domain)
         .await
         .unwrap();
 

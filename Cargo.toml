@@ -20,3 +20,7 @@ serde_with = {version= "3.16.0", features = ["base64"]}
 
 [dev-dependencies]
 async-trait = "0.1.89"
+
+[profile.test]
+test-threads = 1
+
