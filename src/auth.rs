@@ -17,7 +17,7 @@ use crate::{
 use jsonwebtoken;
 
 #[serde_as]
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreKey {
     pub id: i32,
@@ -26,7 +26,7 @@ pub struct PreKey {
 }
 
 #[serde_as]
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedPreKey {
     pub id: i32,
@@ -37,7 +37,7 @@ pub struct SignedPreKey {
 }
 
 #[serde_as]
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
     pub email: String,
@@ -270,14 +270,7 @@ impl<T: IdentityProvider> Auth<T> {
     }
 
     async fn create_actor(&self, user_id: &str, email: &str, domain: &str) -> Result<(), AppError> {
-        let existing_actor = sqlx::query!("SELECT id FROM actors WHERE user_id = $1", user_id)
-            .fetch_optional(&self.db_pool)
-            .await?;
-
-        if existing_actor.is_some() {
-            return Ok(());
-        }
-
+        // TODO: get eko username instead of email
         let username = email
             .split('@')
             .next()
@@ -291,6 +284,7 @@ impl<T: IdentityProvider> Auth<T> {
             r#"
             INSERT INTO actors (actor_url, is_local, inbox_url, outbox_url, user_id)
             VALUES ($1, true, $2, $3, $4)
+            ON CONFLICT (user_id) DO NOTHING
             "#,
             actor_url,
             inbox_url,

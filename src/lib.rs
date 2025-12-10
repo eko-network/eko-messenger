@@ -2,19 +2,19 @@ pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
-// pub mod inbox;
+pub mod inbox;
 pub mod jwt_helper;
 pub mod middleware;
-// pub mod outbox;
+pub mod outbox;
 
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
-    // inbox::get_inbox,
+    inbox::get_inbox,
     middleware::auth_middleware,
-    // outbox::post_to_outbox,
+    outbox::post_to_outbox,
 };
 use anyhow::Context;
 use axum::middleware::from_fn_with_state;
@@ -60,8 +60,8 @@ async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
-        // .route("/api/v1/outbox", post(post_to_outbox))
-        // .route("/api/v1/inbox", get(get_inbox))
+        .route("/api/v1/outbox", post(post_to_outbox))
+        .route("/api/v1/inbox", get(get_inbox))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -75,6 +75,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .layer(ip_source.into_extension())
         .with_state(app_state))
 }
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let pool = db_from_env().await?;
