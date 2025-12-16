@@ -20,16 +20,8 @@ struct SignInRequest {
 
 #[derive(Debug, Deserialize)]
 struct SignInResponse {
-    #[serde(rename = "idToken")]
-    id_token: String,
-    #[serde(rename = "refreshToken")]
-    refresh_token: String,
-    #[serde(rename = "expiresIn")]
-    expires_in: String,
     #[serde(rename = "localId")]
     local_id: String,
-    email: String,
-    registered: bool,
 }
 #[derive(Debug, Deserialize)]
 struct ErrorResponse {
@@ -37,7 +29,6 @@ struct ErrorResponse {
 }
 #[derive(Debug, Deserialize)]
 struct ErrorDetail {
-    code: u32,
     message: String,
 }
 

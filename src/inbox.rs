@@ -1,27 +1,22 @@
-use crate::{AppState, errors::AppError, jwt_helper::Claims};
+use crate::{AppState, activitypub::actor_url, errors::AppError, jwt_helper::Claims};
 use axum::{
+    debug_handler,
     Json,
     extract::{Extension, State},
 };
 use serde_json::Value;
 use std::sync::Arc;
 
+#[debug_handler]
 pub async fn get_inbox(
     State(state): State<AppState>,
     Extension(claims): Extension<Arc<Claims>>,
 ) -> Result<Json<Vec<Value>>, AppError> {
     // Get user_id from device_id
-    let device_id = &claims.sub;
-    let user_record = sqlx::query!("SELECT user_id FROM devices WHERE id = $1", device_id)
-        .fetch_one(&state.pool)
-        .await?;
-    let user_id = user_record.user_id;
+    let uid = &claims.sub;
 
     // Get actor_id from user_id
-    let actor_record = sqlx::query!("SELECT id FROM actors WHERE user_id = $1", user_id)
-        .fetch_one(&state.pool)
-        .await?;
-    let actor_id = actor_record.id;
+    let actor_id = actor_url(&state.domain, uid);
 
     // Get activities
     let activities = sqlx::query!(
@@ -42,4 +37,3 @@ pub async fn get_inbox(
 
     Ok(Json(activities))
 }
-

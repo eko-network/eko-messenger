@@ -1,8 +1,9 @@
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::{IntoResponse, Json as AxumJson, Response},
 };
 use serde_json::json;
+use tracing::error;
 
 #[derive(Debug)]
 pub enum AppError {
@@ -16,12 +17,24 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::BadRequest(msg) => {
+                error!("Bad request: {}", msg);
+                (StatusCode::BAD_REQUEST, msg)
+            }
+            AppError::Unauthorized(msg) => {
+                error!("Unauthorized: {}", msg);
+                (StatusCode::UNAUTHORIZED, msg)
+            }
+            AppError::Forbidden(msg) => {
+                error!("Forbidden: {}", msg);
+                (StatusCode::FORBIDDEN, msg)
+            }
+            AppError::NotFound(msg) => {
+                error!("Not found: {}", msg);
+                (StatusCode::NOT_FOUND, msg)
+            }
             AppError::InternalError(e) => {
-                eprintln!("Internal server error: {:?}", e);
+                error!("Internal server error: {:#}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
@@ -29,7 +42,7 @@ impl IntoResponse for AppError {
             }
         };
 
-        let body = Json(json!({ "error": error_message }));
+        let body = AxumJson(json!({ "error": error_message }));
 
         (status, body).into_response()
     }
@@ -43,3 +56,4 @@ where
         AppError::InternalError(err.into())
     }
 }
+

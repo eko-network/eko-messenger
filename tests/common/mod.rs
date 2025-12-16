@@ -1,8 +1,11 @@
-use eko_messenger::{AppState, app, auth::{Auth, LoginRequest, PreKey, SignedPreKey}, firebase_auth::FirebaseAuth};
+use eko_messenger::{
+    AppState, app,
+    auth::{Auth, LoginRequest, PreKey, SignedPreKey},
+    firebase_auth::FirebaseAuth,
+};
 use sqlx::PgPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
-use uuid::Uuid;
 
 pub struct TestApp {
     pub address: String,
@@ -15,7 +18,6 @@ pub fn generate_login_request(email: String, password: String) -> LoginRequest {
         email,
         password,
         device_name: "test_device".to_string(),
-        device_id: Uuid::new_v4().to_string(),
         identity_key: vec![1, 2, 3],
         registration_id: 123,
         pre_keys: vec![PreKey {
@@ -31,6 +33,10 @@ pub fn generate_login_request(email: String, password: String) -> LoginRequest {
 }
 
 pub async fn spawn_app() -> TestApp {
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .try_init()
+        .unwrap_or_else(|_| {});
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind random port");
@@ -55,8 +61,7 @@ pub async fn spawn_app() -> TestApp {
         .await
         .expect("Failed to truncate actors table");
     sqlx::query!("TRUNCATE TABLE activities RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
+        .execute(&db_pool).await
         .expect("Failed to truncate activities table");
     sqlx::query!("TRUNCATE TABLE inbox_entries RESTART IDENTITY CASCADE")
         .execute(&db_pool)

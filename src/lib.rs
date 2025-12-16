@@ -4,15 +4,17 @@ pub mod errors;
 pub mod firebase_auth;
 pub mod inbox;
 pub mod jwt_helper;
+pub mod key_bundle;
 pub mod middleware;
 pub mod outbox;
-
+pub mod types;
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
     firebase_auth::FirebaseAuth,
     inbox::get_inbox,
+    key_bundle::get_bundle,
     middleware::auth_middleware,
     outbox::post_to_outbox,
 };
@@ -33,6 +35,8 @@ use std::{
     sync::Arc,
 };
 use tokio::net::TcpListener;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -60,8 +64,9 @@ async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
-        .route("/api/v1/outbox", post(post_to_outbox))
-        .route("/api/v1/inbox", get(get_inbox))
+        .route("/users/{username}/outbox", post(post_to_outbox))
+        .route("/users/{username}/inbox", get(get_inbox))
+        .route("/users/{username}/keys/bundle.json", get(get_bundle))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -77,6 +82,10 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
 }
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    // logging
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let pool = db_from_env().await?;
     let firebase_auth = FirebaseAuth::new_from_env()?;
@@ -93,7 +102,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app = app(app_state, ip_source)?;
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("Server listening on http://{}", addr);
+    info!("Server listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await?;
 
@@ -171,9 +180,9 @@ async fn webfinger_handler(
 
 async fn actor_handler(
     State(state): State<AppState>,
-    Path(username): Path<String>,
+    Path(uid): Path<String>,
 ) -> Result<Json<Person>, AppError> {
-    let actor = activitypub::create_actor(&username, &state.domain);
+    let actor = activitypub::create_person(&uid, &state.domain);
 
     Ok(Json(actor))
 }

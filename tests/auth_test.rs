@@ -32,7 +32,6 @@ async fn test_login_and_verify_token() {
         .unwrap();
 
     assert!(!login_res.access_token.is_empty());
-    assert!(!login_res.refresh_token.is_empty());
 
     let claims = auth.verify_access_token(&login_res.access_token).unwrap();
 

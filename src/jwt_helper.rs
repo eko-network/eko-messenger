@@ -1,14 +1,15 @@
 use std::env::var_os;
 
-use time::{Duration, OffsetDateTime};
 use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };
 use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
+    pub did: i32,
     pub exp: usize,
     pub iat: usize,
     pub roles: Vec<String>,
@@ -33,14 +34,15 @@ impl JwtHelper {
             decoding_key: decoding_key,
         })
     }
-    pub fn create_jwt(&self, user_id: &str) -> Result<String, jsonwebtoken::errors::Error> {
+    pub fn create_jwt(&self, uid: &str, did: i32) -> Result<String, jsonwebtoken::errors::Error> {
         let now = OffsetDateTime::now_utc();
         let iat = now.unix_timestamp() as usize;
         // Set expiration to 15 minutes from now
         let exp = (now + Duration::minutes(15)).unix_timestamp() as usize;
 
         let claims = Claims {
-            sub: user_id.to_string(),
+            sub: uid.to_string(),
+            did: did,
             exp,
             iat,
             roles: vec!["user".to_string()],
