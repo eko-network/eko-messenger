@@ -181,7 +181,7 @@ Example: Create activity
   "object": {  
 	"type": "Note",  
 	"id": "urn:eko:uuid:<uuid>",  
-	"content": "Hello, World\!"  
+	"content": "Hello, World!"  
   }  
 }  
 ```  
