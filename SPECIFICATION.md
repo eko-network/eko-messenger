@@ -60,10 +60,10 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 Example: User with keyPackages collection  
 ```json  
 {  
-  "@context": \[  
+  "@context": [  
 	"https://www.w3.org/ns/activitystreams",  
 	"https://eko.network/ns"  
-  \],  
+  ],  
   "type": "Person",  
   "id": "https://eko.network/user/user1",  
   "preferredUsername": "user1",  
@@ -72,10 +72,10 @@ Example: User with keyPackages collection
   "eko:keyPackages": {  
 	"type": "Collection",  
 	"id": "https://eko.network/user/user1/keyPackages",  
-	"items": \[  
+	"items": [  
   	"https://eko.network/user/user1/keyPackage/A",  
   	"https://eko.network/user/user1/keyPackage/B"  
-	\]  
+	]  
   }  
 }  
 ```
@@ -118,12 +118,12 @@ Example: User sending a `SignalEnvelope`
   "type": "Create",  
   "actor": "https://eko.network/user/user1",  
   "id": “https://eko.network/user/signal/\<envelope-id\>” // this link should be **empty**  
-  "to": \["https://other.network/user/user2"\],  
+  "to": ["https://other.network/user/user2"],  
   "object": {  
-	"type": \["Object", "SignalEnvelope"\],  
+	"type": ["Object", "SignalEnvelope"],  
 	"mediaType": "message/signal",  
 	"encoding": "base64",  
-	"messages": \[  
+	"messages": [  
   	{  
     	"deviceId": "device-A",  
     	"content": "base64-encoded-ciphertext"  
@@ -132,7 +132,7 @@ Example: User sending a `SignalEnvelope`
     	"deviceId": "device-B",  
     	"content": "base64-encoded-ciphertext"  
   	}  
-	\]  
+	]  
   }  
 }  
 ```
@@ -215,26 +215,26 @@ Example: Delete activity
 When sending a message, the client:
 
 1. Fetches each recipient’s `keyPackages` collection.  
-2. Encrypts the message for each recipient’s Device using the Signal protocol.  
-3. Creates a `SignalEnvelope` containing one encrypted Message per Device.  
-4. POSTs a Create activity with the `SignalEvelop` to its outbox.
+1. Encrypts the message for each recipient’s Device using the Signal protocol.  
+1. Creates a `SignalEnvelope` containing one encrypted Message per Device.  
+1. POSTs a Create activity with the `SignalEvelop` to its outbox.
 
 ### Receive Message
 
 #### Message
 
 1. Decrypt message.  
-2. Read as ActivityPub.
+1. Read as ActivityPub.
 
 #### PartialDelivery
 
 1. Re-pull Recipient’s `KeyPackages` and any keys the client does not have.  
-2. Resend `SignalEnvelop` with remaining encrypted messages.
+1. Resend `SignalEnvelop` with remaining encrypted messages.
 
 #### Reject
 
 1. Re-pull Recipient’s KeyPackages and any keys the client does not have.  
-2. Resend `SignalEnvelope` with new encrypted messages.
+1. Resend `SignalEnvelope` with new encrypted messages.
 
 ## Server-to-Server Protocol (S2S)
 
@@ -244,30 +244,30 @@ When the server receives a `SignalEnvelope` message in the User’s inbox:
 
 1. Server delivers the envelope to the receiver’s inbox.  
    1. Synchronously if the receiver is on the User’s homeserver.  
-   2. Asynchronously if on an external server.  
+   1. Asynchronously if on an external server.  
       1. Note: the external server may reject the `SignalEnvelope` if not all devices have an encrypted message.  
-2. Server MUST notify the Client if the server fails to deliver the messages.
+1. Server MUST notify the Client if the server fails to deliver the messages.
 
 ### Receive Message
 
 When a server receives a `SignalEnvelope` in the User’s inbox, it MUST:
 
 1. Verify the envelope contains exactly one encrypted Message for each currently registered Device of the recipient User.  
-2. If verification succeeds, the message is put in the User’s inbox, and ACKs the delivery, and a Confirm is (optionally) sent to the client (if the server implementation wants to distinguish a receive to the home server vs external server).  
-3. If verification fails, delivery is rejected.  
+1. If verification succeeds, the message is put in the User’s inbox, and ACKs the delivery, and a Confirm is (optionally) sent to the client (if the server implementation wants to distinguish a receive to the home server vs external server).  
+1. If verification fails, delivery is rejected.  
    1. If Partial Delivery is implemented, the server will put the Messages in the User’s inbox and put a PartialDelivery activity in the Sender’s inbox. MUST wait for the  `SignalEnvelope` with remaining messages.  
-   2. Else, a Reject activity is put in the Sender’s inbox.
+   1. Else, a Reject activity is put in the Sender’s inbox.
 
 Example: Partial Delivery  
 ```json  
 {  
-  "@context": \[  
+  "@context": [  
 	"https://www.w3.org/ns/activitystreams",  
 	"https://eko.network/ns"  
-  \],  
+  ],  
   "type": "eko:PartialDelivery",  
   "actor": "https://other.network",  
-  "to": \["https://eko.network/user/user1"\],  
+  "to": ["https://eko.network/user/user1"],  
   "object": "https://eko.network/user/signal/\<envelope-id\>",  
   "eko:deviceSetOutOfDate": true,  
   "summary": "SignalEnvelope delivered, but one or more recipient devices were missing encrypted messages."  
@@ -277,13 +277,13 @@ Example: Partial Delivery
 Example: Reject  
 ```json  
 {  
-  "@context": \[  
+  "@context": [  
 	"https://www.w3.org/ns/activitystreams",  
 	"https://eko.network/ns"  
-  \],  
+  ],  
   "type": "Reject",  
   "actor": "https://other.network",  
-  "to": \["https://eko.network/user/user1"\],  
+  "to": ["https://eko.network/user/user1"],  
   "object": "https://eko.network/user/signal/\<envelope-id\>",  
   "eko:deviceSetOutOfDate": true,  
   "eko:partialDelivery": bool,  
