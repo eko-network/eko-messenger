@@ -53,6 +53,8 @@ sequenceDiagram
 
     Note over ServerB: Phase 5 — Device Fanout (Home Server)
 
+    Device1->>BobInbox: GET inbox
+    Device2->>BobInbox: GET inbox
     ServerB->>Device1: Deliver encrypted message
     ServerB->>Device2: Deliver encrypted message
     ServerB->>ServerB: Delete envelope after delivery
@@ -100,41 +102,6 @@ sequenceDiagram
     end
 ```
 
-
-
-
-
-
-
-```mermaid
-sequenceDiagram
-    participant Alice as Alice's App
-    participant ServerA as Server A<br/>(alice@serverA)
-    participant ServerB as Server B<br/>(bob@serverB)
-    participant Device1 as Bob Device 1<br/>Queue
-    participant Device2 as Bob Device 2<br/>Queue
-
-    Note over Alice,Device2: Step A: Key Discovery (Federated)
-    Alice->>ServerA: 1. Get keys for bob@serverB
-    ServerA->>ServerB: 2. Request Public Identity Keys<br/>and PreKeys for Bob's devices
-    ServerB-->>ServerA: 3. Return keys for<br/>Bob_Device_1 & Bob_Device_2
-    ServerA-->>Alice: 4. Pass keys to Alice's App
-
-    Note over Alice,Device2: Step B: Client-Side Encryption
-    Alice->>Alice: 1. Encrypt message for Bob_Device_1
-    Alice->>Alice: 2. Encrypt message for Bob_Device_2
-    Alice->>ServerA: 3. Send combined payload<br/>(both encrypted blobs)
-
-    Note over Alice,Device2: Step C: Federation (First Fan-Out)
-    ServerA->>ServerA: Wrap in ActivityPub JSON<br/>(Create activity)
-    ServerA->>ServerB: POST to Bob's User Inbox<br/>on Server B
-
-    Note over Alice,Device2: Step D: Device Delivery (Second Fan-Out)
-    ServerB->>ServerB: 1. Authenticate request<br/>from serverA
-    ServerB->>ServerB: 2. Extract encrypted chunks<br/>for each device ID
-    ServerB->>Device1: 3. Drop chunk into<br/>Queue_Bob_Device_1
-    ServerB->>Device2: 4. Drop chunk into<br/>Queue_Bob_Device_2
-```
 ## Signal Protocol
 ```mermaid
 sequenceDiagram
