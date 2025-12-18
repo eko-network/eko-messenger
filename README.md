@@ -5,8 +5,8 @@ This repository contains the backend server for Eko Messenger, a standalone, end
 
 The server is written in Rust and uses the ActivityPub protocol for federation. While this server powers the Eko Messenger application, it also serves as a reference implementation for a secure, E2EE messaging protocol over ActivityPub.
 
-# [Specification](https://github.com/eko-network/eko-messenger/blob/main/README.md)
-The specification is found [here](https://github.com/eko-network/eko-messenger/blob/main/README.md)
+# [Specification](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
+The specification is found [here](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
 
 # Example
 
