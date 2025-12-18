@@ -1,12 +1,111 @@
 # WIP: Eko Messages
 A standalone, end-to-end encrypted (E2EE) messaging application.
 
-## Objective
-
 This repository contains the backend server for Eko Messenger, a standalone, end-to-end encrypted (E2EE) messaging application that uses the Eko Social app for authentication.
 
-The server is written in Rust and uses the ActivityPub protocol for federation. While this server powers the Eko Messenger application, it also serves as a reference implementation for a secure, E2EE messaging protocol over ActivityPub. Our goal is to define and promote an open protocol that enables federated, cross-platform messaging.
-## Server to Server
+The server is written in Rust and uses the ActivityPub protocol for federation. While this server powers the Eko Messenger application, it also serves as a reference implementation for a secure, E2EE messaging protocol over ActivityPub.
+
+# [Specification](https://github.com/eko-network/eko-messenger/blob/main/README.md)
+The specification is found [here](https://github.com/eko-network/eko-messenger/blob/main/README.md)
+
+# Example
+
+## Sending a message
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice as Alice Device
+    participant ServerA as Server A<br/>(alice@serverA)
+    participant ServerB as Server B<br/>(bob@serverB)
+    participant BobInbox as Bob User Inbox
+    participant Device1 as Bob Device A
+    participant Device2 as Bob Device B
+
+    Note over Alice,ServerB: Phase 1 — Device & Key Discovery
+
+    Alice->>ServerA: Fetch keyPackages for bob@serverB
+    ServerA->>ServerB: GET /user/bob/keyPackages
+    ServerB-->>ServerA: keyPackage refs + public keys
+    ServerA-->>Alice: keyPackages collection
+
+    Note over Alice: Phase 2 — Client-side Encryption
+
+    Alice->>Alice: Encrypt ActivityPub activity<br/>for Device A (Signal)
+    Alice->>Alice: Encrypt ActivityPub activity<br/>for Device B (Signal)
+    Alice->>Alice: Build SignalEnvelope<br/>(one message per device)
+
+    Note over Alice,ServerA: Phase 3 — Client → Server (C2S)
+
+    Alice->>ServerA: POST Create(SignalEnvelope)<br/>to outbox
+    ServerA->>ServerA: Validate structure (not content)
+
+    Note over ServerA,ServerB: Phase 4 — Federation (S2S)
+
+    ServerA->>ServerB: POST Create(SignalEnvelope)<br/>to Bob inbox
+    ServerB->>ServerB: Verify encrypted message exists<br/>for every registered device
+
+    alt All devices covered
+        ServerB-->>ServerA: 202 Accepted
+        ServerB->>BobInbox: Enqueue SignalEnvelope
+    else Missing or stale devices
+        ServerB-->>ServerA: Reject / PartialDelivery
+    end
+
+    Note over ServerB: Phase 5 — Device Fanout (Home Server)
+
+    ServerB->>Device1: Deliver encrypted message
+    ServerB->>Device2: Deliver encrypted message
+    ServerB->>ServerB: Delete envelope after delivery
+```
+
+## SignalEnvelope Lifecycle
+```mermaid
+sequenceDiagram
+    participant Sender
+    participant SenderServer
+    participant ReceiverServer
+    participant ReceiverDevice
+
+    Sender->>Sender: Encrypt ActivityPub activity
+    Sender->>Sender: Build SignalEnvelope
+    Sender->>SenderServer: POST Create(SignalEnvelope)
+
+    SenderServer->>ReceiverServer: POST Create(SignalEnvelope)
+    ReceiverServer->>ReceiverServer: Verify device coverage
+    ReceiverServer->>ReceiverDevice: Deliver encrypted message
+    ReceiverServer->>ReceiverServer: Delete SignalEnvelope
+```
+
+## Partial Delivery / Reject
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice
+    participant ServerA
+    participant ServerB
+
+    Alice->>ServerA: POST Create(SignalEnvelope)
+    ServerA->>ServerB: POST Create(SignalEnvelope)
+
+    alt Missing some devices
+        ServerB-->>ServerA: PartialDelivery<br/>+ missingKeyPackages
+        ServerA-->>Alice: PartialDelivery
+        Alice->>Alice: Fetch missing KeyPackages
+        Alice->>Alice: Re-encrypt + retry
+    else Stale device set
+        ServerB-->>ServerA: Reject<br/>deviceSetOutOfDate
+        ServerA-->>Alice: Reject
+        Alice->>ServerB: Re-fetch keyPackages collection
+        Alice->>Alice: Re-encrypt from scratch
+    end
+```
+
+
+
+
+
+
+
 ```mermaid
 sequenceDiagram
     participant Alice as Alice's App
@@ -69,6 +168,7 @@ sequenceDiagram
     
     Alice->>Alice: Encrypt Message M1 with Message Key
     Alice->>Alice: Derive Message Key from Chain Key
+    Alice->>Server: Initial Message: IKa_pub, EKa_pub, OPKb1_id, Encrypted(M1)
     Alice->>Bob: Initial Message: IKa_pub, EKa_pub, OPKb1_id, Encrypted(M1)
     
     Note over Bob: Bob Receives First Message
