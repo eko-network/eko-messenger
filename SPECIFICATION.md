@@ -88,7 +88,7 @@ Example: `KeyPackage` object
   "@context": "https://eko.network/ns",  
   "type": "KeyPackage",  
   "id": "https://eko.network/user/user1/keyPackage/A",  
-  "deviceId": "\<device-id\>",  
+  "deviceId": "<device-id>",  
   "identityKey": "base64-encoded",  
   "registrationId": 1,  
   "preKeyId": 1,  
@@ -117,7 +117,7 @@ Example: User sending a `SignalEnvelope`
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Create",  
   "actor": "https://eko.network/user/user1",  
-  "id": “https://eko.network/user/signal/\<envelope-id\>” // this link should be **empty**  
+  "id": "https://eko.network/user/signal/<envelope-id>" // this link should be **empty**  
   "to": ["https://other.network/user/user2"],  
   "object": {  
 	"type": ["Object", "SignalEnvelope"],  
@@ -177,10 +177,10 @@ Example: Create activity
 {  
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Create",  
-  "id": "urn:eko:uuid:\<uuid\>",  
+  "id": "urn:eko:uuid:<uuid>",  
   "object": {  
 	"type": "Note",  
-	"id": "urn:eko:uuid:\<uuid\>",  
+	"id": "urn:eko:uuid:<uuid>",  
 	"content": "Hello, World\!"  
   }  
 }  
@@ -190,10 +190,10 @@ Example: Update activity
 {  
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Update",  
-  "id": "urn:eko:uuid:\<uid\>",  
+  "id": "urn:eko:uuid:<uid>",  
   "object": {  
 	"type": "Note",  
-	"id": "urn:eko:uuid:\<uid\>",  
+	"id": "urn:eko:uuid:<uid>",  
 	"content": "Hello, World Universe\!"  
   }  
 }  
@@ -203,8 +203,8 @@ Example: Delete activity
 {  
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Delete",  
-  "id": "urn:eko:uuid:\<uid\>",  
-  "object": "urn:eko:uuid:\<uid\>"  
+  "id": "urn:eko:uuid:<uid>",  
+  "object": "urn:eko:uuid:<uid>"  
 }  
 ```
 
@@ -268,7 +268,7 @@ Example: Partial Delivery
   "type": "eko:PartialDelivery",  
   "actor": "https://other.network",  
   "to": ["https://eko.network/user/user1"],  
-  "object": "https://eko.network/user/signal/\<envelope-id\>",  
+  "object": "https://eko.network/user/signal/<envelope-id>",  
   "eko:deviceSetOutOfDate": true,  
   "summary": "SignalEnvelope delivered, but one or more recipient devices were missing encrypted messages."  
 }  
@@ -284,7 +284,7 @@ Example: Reject
   "type": "Reject",  
   "actor": "https://other.network",  
   "to": ["https://eko.network/user/user1"],  
-  "object": "https://eko.network/user/signal/\<envelope-id\>",  
+  "object": "https://eko.network/user/signal/<envelope-id>",  
   "eko:deviceSetOutOfDate": true,  
   "eko:partialDelivery": bool,  
   "summary": "SignalEnvelope rejected: encrypted messages missing for one or more recipient devices."  
