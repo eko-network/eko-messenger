@@ -194,7 +194,7 @@ Example: Update activity
   "object": {  
 	"type": "Note",  
 	"id": "urn:eko:uuid:<uid>",  
-	"content": "Hello, World Universe\!"  
+	"content": "Hello, World Universe!"  
   }  
 }  
 ```  
@@ -286,7 +286,7 @@ Example: Reject
   "to": ["https://eko.network/user/user1"],  
   "object": "https://eko.network/user/signal/<envelope-id>",  
   "eko:deviceSetOutOfDate": true,  
-  "eko:partialDelivery": bool,  
+  "eko:partialDelivery": true,
   "summary": "SignalEnvelope rejected: encrypted messages missing for one or more recipient devices."  
 }  
 ```
