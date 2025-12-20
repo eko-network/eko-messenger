@@ -1,41 +1,107 @@
 # WIP: Eko Messages
 A standalone, end-to-end encrypted (E2EE) messaging application.
 
-## Objective
-
 This repository contains the backend server for Eko Messenger, a standalone, end-to-end encrypted (E2EE) messaging application that uses the Eko Social app for authentication.
 
-The server is written in Rust and uses the ActivityPub protocol for federation. While this server powers the Eko Messenger application, it also serves as a reference implementation for a secure, E2EE messaging protocol over ActivityPub. Our goal is to define and promote an open protocol that enables federated, cross-platform messaging.
-## Server to Server
+The server is written in Rust and uses the ActivityPub protocol for federation. While this server powers the Eko Messenger application, it also serves as a reference implementation for a secure, E2EE messaging protocol over ActivityPub.
+
+# [Specification](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
+The specification is found [here](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
+
+# Example
+
+## Sending a message
 ```mermaid
 sequenceDiagram
-    participant Alice as Alice's App
+    autonumber
+    participant Alice as Alice Device
     participant ServerA as Server A<br/>(alice@serverA)
     participant ServerB as Server B<br/>(bob@serverB)
-    participant Device1 as Bob Device 1<br/>Queue
-    participant Device2 as Bob Device 2<br/>Queue
+    participant BobInbox as Bob User Inbox
+    participant Device1 as Bob Device A
+    participant Device2 as Bob Device B
 
-    Note over Alice,Device2: Step A: Key Discovery (Federated)
-    Alice->>ServerA: 1. Get keys for bob@serverB
-    ServerA->>ServerB: 2. Request Public Identity Keys<br/>and PreKeys for Bob's devices
-    ServerB-->>ServerA: 3. Return keys for<br/>Bob_Device_1 & Bob_Device_2
-    ServerA-->>Alice: 4. Pass keys to Alice's App
+    Note over Alice,ServerB: Phase 1 — Device & Key Discovery
 
-    Note over Alice,Device2: Step B: Client-Side Encryption
-    Alice->>Alice: 1. Encrypt message for Bob_Device_1
-    Alice->>Alice: 2. Encrypt message for Bob_Device_2
-    Alice->>ServerA: 3. Send combined payload<br/>(both encrypted blobs)
+    Alice->>ServerA: Fetch keyPackages for bob@serverB
+    ServerA->>ServerB: GET /user/bob/keyPackages
+    ServerB-->>ServerA: keyPackage refs + public keys
+    ServerA-->>Alice: keyPackages collection
 
-    Note over Alice,Device2: Step C: Federation (First Fan-Out)
-    ServerA->>ServerA: Wrap in ActivityPub JSON<br/>(Create activity)
-    ServerA->>ServerB: POST to Bob's User Inbox<br/>on Server B
+    Note over Alice: Phase 2 — Client-side Encryption
 
-    Note over Alice,Device2: Step D: Device Delivery (Second Fan-Out)
-    ServerB->>ServerB: 1. Authenticate request<br/>from serverA
-    ServerB->>ServerB: 2. Extract encrypted chunks<br/>for each device ID
-    ServerB->>Device1: 3. Drop chunk into<br/>Queue_Bob_Device_1
-    ServerB->>Device2: 4. Drop chunk into<br/>Queue_Bob_Device_2
+    Alice->>Alice: Encrypt ActivityPub activity<br/>for Device A (Signal)
+    Alice->>Alice: Encrypt ActivityPub activity<br/>for Device B (Signal)
+    Alice->>Alice: Build SignalEnvelope<br/>(one message per device)
+
+    Note over Alice,ServerA: Phase 3 — Client → Server (C2S)
+
+    Alice->>ServerA: POST Create(SignalEnvelope)<br/>to outbox
+    ServerA->>ServerA: Validate structure (not content)
+
+    Note over ServerA,ServerB: Phase 4 — Federation (S2S)
+
+    ServerA->>ServerB: POST Create(SignalEnvelope)<br/>to Bob inbox
+    ServerB->>ServerB: Verify encrypted message exists<br/>for every registered device
+
+    alt All devices covered
+        ServerB-->>ServerA: 202 Accepted
+        ServerB->>BobInbox: Enqueue SignalEnvelope
+    else Missing or stale devices
+        ServerB-->>ServerA: Reject / PartialDelivery
+    end
+
+    Note over ServerB: Phase 5 — Device Fanout (Home Server)
+
+    Device1->>BobInbox: GET inbox
+    Device2->>BobInbox: GET inbox
+    ServerB->>Device1: Deliver encrypted message
+    ServerB->>Device2: Deliver encrypted message
+    ServerB->>ServerB: Delete envelope after delivery
 ```
+
+## SignalEnvelope Lifecycle
+```mermaid
+sequenceDiagram
+    participant Sender
+    participant SenderServer
+    participant ReceiverServer
+    participant ReceiverDevice
+
+    Sender->>Sender: Encrypt ActivityPub activity
+    Sender->>Sender: Build SignalEnvelope
+    Sender->>SenderServer: POST Create(SignalEnvelope)
+
+    SenderServer->>ReceiverServer: POST Create(SignalEnvelope)
+    ReceiverServer->>ReceiverServer: Verify device coverage
+    ReceiverServer->>ReceiverDevice: Deliver encrypted message
+    ReceiverServer->>ReceiverServer: Delete SignalEnvelope
+```
+
+## Partial Delivery / Reject
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice
+    participant ServerA
+    participant ServerB
+
+    Alice->>ServerA: POST Create(SignalEnvelope)
+    ServerA->>ServerB: POST Create(SignalEnvelope)
+
+    alt Missing some devices
+        ServerB-->>ServerA: PartialDelivery<br/>+ missingKeyPackages
+        ServerA-->>Alice: PartialDelivery
+        Alice->>Alice: Fetch missing KeyPackages
+        Alice->>Alice: Re-encrypt + retry
+    else Stale device set
+        ServerB-->>ServerA: Reject<br/>deviceSetOutOfDate
+        ServerA-->>Alice: Reject
+        Alice->>ServerB: Re-fetch keyPackages collection
+        Alice->>Alice: Re-encrypt from scratch
+    end
+```
+
 ## Signal Protocol
 ```mermaid
 sequenceDiagram
@@ -69,6 +135,7 @@ sequenceDiagram
     
     Alice->>Alice: Encrypt Message M1 with Message Key
     Alice->>Alice: Derive Message Key from Chain Key
+    Alice->>Server: Initial Message: IKa_pub, EKa_pub, OPKb1_id, Encrypted(M1)
     Alice->>Bob: Initial Message: IKa_pub, EKa_pub, OPKb1_id, Encrypted(M1)
     
     Note over Bob: Bob Receives First Message
