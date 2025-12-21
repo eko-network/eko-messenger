@@ -8,6 +8,29 @@ The server is written in Rust and uses the ActivityPub protocol for federation. 
 # [Specification](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
 The specification is found [here](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
 
+# Developing
+## Requirements
+For none nix users:
+* [rust](https://rust-lang.org/tools/install/)
+* [postgres](https://www.postgresql.org/download/)
+* [process-compose](https://github.com/F1bonacc1/process-compose)
+* sqlx: cargo install sqlx-cli
+
+## Starting DB
+Note: Must run with the env variables
+```
+process-compose
+```
+
+## Running Rust server
+Note: Must run with the env variables
+```
+cargo run
+```
+
+## Testing
+
+
 # Example
 
 ## Sending a message
