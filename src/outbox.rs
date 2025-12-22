@@ -36,31 +36,13 @@ pub async fn post_to_outbox(
             to: payload.object.to,
         },
     };
-    let mut tx = state.pool.begin().await?;
-    sqlx::query!(
-        r#"
-        INSERT INTO activities (id, actor_id, activity_type, activity_json)
-        VALUES ($1, $2, $3, $4)
-        "#,
-        activity_id,
-        payload.actor,
-        payload.type_field,
-        json!(payload)
-    )
-    .execute(&mut *tx)
-    .await?;
+    state.storage.outbox.insert_local_activity(
+        &activity_id,
+        &payload.actor,
+        &payload.type_field,
+        json!(payload),
+        &payload.object.to[0],
+    ).await?;
     // TODO: send to other server if recipient not local
-
-    sqlx::query!(
-        r#"
-        INSERT INTO inbox_entries (inbox_actor_id, activity_id)
-        VALUES ($1, $2)
-        "#,
-        payload.object.to[0],
-        activity_id
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
     Ok((StatusCode::CREATED, Json(payload)).into_response())
 }

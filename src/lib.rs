@@ -8,6 +8,7 @@ pub mod key_bundle;
 pub mod middleware;
 pub mod outbox;
 pub mod types;
+pub mod storage;
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
@@ -17,6 +18,7 @@ use crate::{
     key_bundle::get_bundle,
     middleware::auth_middleware,
     outbox::post_to_outbox,
+    storage::{Storage, postgres::connection::postgres_storage},
 };
 use anyhow::Context;
 use axum::middleware::from_fn_with_state;
@@ -42,7 +44,7 @@ use tracing_subscriber::EnvFilter;
 pub struct AppState {
     pub auth: Arc<Auth<FirebaseAuth>>,
     pub domain: String,
-    pub pool: PgPool,
+    pub storage: Arc<Storage>,
 }
 
 #[derive(Deserialize)]
@@ -88,15 +90,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let pool = db_from_env().await?;
+    let storage = Arc::new(postgres_storage(pool));
+
     let firebase_auth = FirebaseAuth::new_from_env()?;
     let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
 
-    let auth = Auth::new(firebase_auth, pool.clone());
+    let auth = Auth::new(firebase_auth, storage.clone());
 
     let app_state = AppState {
         auth: Arc::new(auth),
         domain,
-        pool: pool.clone(),
+        storage,
     };
 
     let app = app(app_state, ip_source)?;
