@@ -1,5 +1,6 @@
 pub mod traits;
 pub mod postgres;
+pub mod memory;
 
 use std::sync::Arc;
 use crate::storage::traits::*;
