@@ -5,7 +5,7 @@ processes:
       bash -c "
         mkdir -p .postgres-data &&
         [ ! -f .postgres-data/PG_VERSION ] && initdb -D .postgres-data -U postgres;
-        (until pg_isready -U postgres -h localhost; do sleep 1; done && sqlx migrate run) &
+        (until pg_isready -U postgres -h localhost; do sleep 1; done && sqlx migrate run && cargo sqlx prepare) &
         postgres -D .postgres-data -c unix_socket_directories=.
       "
     readiness_probe:

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.activity_json\n        FROM activities a\n        INNER JOIN inbox_entries ie ON a.id = ie.activity_id\n        WHERE ie.inbox_actor_id = $1\n        ORDER BY a.created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "activity_json",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4a139d8fc3281f856e603ec1e911aa326e6263aea515c1474dcb80e2a229732a"
+}

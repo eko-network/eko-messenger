@@ -17,6 +17,19 @@
     inherit (nixpkgs) lib;
     forAllSystems = lib.genAttrs lib.systems.flakeExposed;
   in {
+    packages = forAllSystems (
+      system: let
+        overlays = [(import rust-overlay)];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+      in {
+        default = import ./nix/package.nix { inherit pkgs; };
+      }
+    );
+
+    nixosModules.default = import ./nix/module.nix;
+
     devShells = forAllSystems (
       system: let
         overlays = [(import rust-overlay)];
@@ -24,22 +37,7 @@
           inherit system overlays;
         };
       in {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            # Rust toolchain
-            rust-bin.stable.latest.default
-            cargo-watch
-            process-compose
-            postgresql
-
-            pkg-config
-            openssl
-            sqlx-cli
-          ];
-          shellHook = ''
-            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
-          '';
-        };
+        default = import ./nix/devshell.nix { inherit pkgs; };
       }
     );
   };

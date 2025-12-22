@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT did, identity_key, registration_id FROM devices WHERE uid = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "did",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "identity_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "registration_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3f970c6de686e7373dd1b87adf1e2ecb2af3d57ebc37b0f77bd19f7fc542fcf4"
+}
