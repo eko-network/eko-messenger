@@ -4,6 +4,7 @@ pub mod postgres;
 use std::sync::Arc;
 use crate::storage::traits::*;
 
+#[derive(Clone)]
 pub struct Storage {
     pub inbox: Arc<dyn InboxStore>,
     pub outbox: Arc<dyn OutboxStore>,

@@ -1,7 +1,9 @@
 use eko_messenger::{
-    AppState, app,
+    AppState,
+    app,
     auth::{Auth, LoginRequest, PreKey, SignedPreKey},
     firebase_auth::FirebaseAuth,
+    storage::{Storage, postgres::connection::postgres_storage},
 };
 use sqlx::PgPool;
 use std::{env, net::SocketAddr, sync::Arc};
@@ -9,8 +11,8 @@ use tokio::net::TcpListener;
 
 pub struct TestApp {
     pub address: String,
-    pub db_pool: PgPool,
     pub domain: String,
+    pub storage: Arc<Storage>,
 }
 
 pub fn generate_login_request(email: String, password: String) -> LoginRequest {
@@ -56,42 +58,31 @@ pub async fn spawn_app() -> TestApp {
         .expect("Failed to run migrations on test database");
 
     // Clear tables
-    sqlx::query!("TRUNCATE TABLE actors RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate actors table");
-    sqlx::query!("TRUNCATE TABLE activities RESTART IDENTITY CASCADE")
-        .execute(&db_pool).await
-        .expect("Failed to truncate activities table");
-    sqlx::query!("TRUNCATE TABLE inbox_entries RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate inbox_entries table");
-    sqlx::query!("TRUNCATE TABLE devices RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate devices table");
-    sqlx::query!("TRUNCATE TABLE refresh_tokens RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate refresh_tokens table");
-    sqlx::query!("TRUNCATE TABLE pre_keys RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate pre_keys table");
-    sqlx::query!("TRUNCATE TABLE signed_pre_keys RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate signed_pre_keys table");
+    for table in [
+        "actors",
+        "activities",
+        "inbox_entries",
+        "devices",
+        "refresh_tokens",
+        "pre_keys",
+        "signed_pre_keys",
+    ] {
+        sqlx::query(&format!("TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
+            .execute(&db_pool)
+            .await
+            .unwrap();
+    }
+
+    let storage = Arc::new(postgres_storage(db_pool));
 
     let firebase_auth =
         FirebaseAuth::new_from_env().expect("Failed to create FirebaseAuth from env");
-    let auth_service = Auth::new(firebase_auth, db_pool.clone());
+    let auth_service = Auth::new(firebase_auth, storage.clone());
 
     let app_state = AppState {
         auth: Arc::new(auth_service),
         domain: domain.clone(),
-        pool: db_pool.clone(),
+        storage: storage.clone(),
     };
 
     let app_router = app(app_state, "ConnectInfo".to_string())
@@ -108,7 +99,7 @@ pub async fn spawn_app() -> TestApp {
 
     TestApp {
         address,
-        db_pool,
         domain,
+        storage,
     }
 }
