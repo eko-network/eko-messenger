@@ -1,15 +1,15 @@
 use async_trait::async_trait;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::errors::AppError;
+use crate::storage::models::StoredActivity;
 use crate::storage::traits::InboxStore;
 
 #[derive(Default)]
 pub struct InMemoryInboxStore {
     // inbox_actor_id -> Vec<activity_json>
-    inboxes: RwLock<HashMap<String, Vec<Value>>>,
+    inboxes: RwLock<HashMap<String, Vec<StoredActivity>>>,
 }
 
 impl InMemoryInboxStore {
@@ -19,7 +19,7 @@ impl InMemoryInboxStore {
         }
     }
 
-    pub fn add_activity(&self, inbox_actor_id: &str, activity: Value) {
+    pub fn add_activity(&self, inbox_actor_id: &str, activity: StoredActivity) {
         let mut inboxes = self.inboxes.write().unwrap();
         inboxes
             .entry(inbox_actor_id.to_string())
@@ -33,7 +33,7 @@ impl InboxStore for InMemoryInboxStore {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-    ) -> Result<Vec<Value>, AppError> {
+    ) -> Result<Vec<StoredActivity>, AppError> {
         let inboxes = self.inboxes.read().unwrap();
         Ok(inboxes
             .get(inbox_actor_id)

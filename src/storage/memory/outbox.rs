@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use crate::storage::models::StoredOutboxActivity;
 use crate::storage::traits::OutboxStore;
 use crate::errors::AppError;
 
@@ -31,30 +32,27 @@ impl InMemoryOutboxStore {
 
 #[async_trait]
 impl OutboxStore for InMemoryOutboxStore {
-    async fn insert_local_activity(
+    async fn insert_activity(
         &self,
-        activity_id: &str,
-        actor_id: &str,
-        activity_type: &str,
-        activity_json: Value,
+        activity: &StoredOutboxActivity,
         inbox_actor_id: &str,
     ) -> Result<(), AppError> {
-        let activity = Activity {
-            id: activity_id.to_string(),
-            actor_id: actor_id.to_string(),
-            activity_type: activity_type.to_string(),
-            activity_json,
+        let stored_activity = Activity {
+            id: activity.activity_id.to_string(),
+            actor_id: activity.actor_id.to_string(),
+            activity_type: activity.activity_type.to_string(),
+            activity_json: activity.activity.clone(),
         };
 
         let mut activities = self.activities.write().unwrap();
-        activities.insert(activity_id.to_string(), activity);
+        activities.insert(stored_activity.id.to_string(), stored_activity);
         drop(activities);
 
         let mut inbox_entries = self.inbox_entries.write().unwrap();
         inbox_entries
             .entry(inbox_actor_id.to_string())
             .or_insert_with(Vec::new)
-            .push(activity_id.to_string());
+            .push(activity.activity_id.to_string());
 
         Ok(())
     }

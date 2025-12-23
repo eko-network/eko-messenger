@@ -20,12 +20,18 @@ pub async fn get_inbox(
     let uid = &claims.sub;
     let actor_id = actor_url(&state.domain, uid);
 
-    let activities = state
+    // TODO check to see if the actor url is NOT local
+
+    let items = state
         .storage
         .inbox
         .inbox_activities(&actor_id)
         .await?;
 
-    Ok(Json(activities))
+    // TODO probably need to do some checks, and deletions here when sent to the user
+
+    Ok(Json(
+        items.into_iter().map(|i| i.activity).collect()
+    ))
 }
 

@@ -1,8 +1,5 @@
 use crate::{
-    AppState,
-    activitypub::{CreateActivity, EncryptedMessage, NoId, WithId},
-    errors::AppError,
-    jwt_helper::Claims,
+    activitypub::{CreateActivity, EncryptedMessage, NoId, WithId}, errors::AppError, jwt_helper::Claims, storage::models::StoredOutboxActivity, AppState
 };
 use axum::{
     Json, debug_handler,
@@ -11,6 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use time::OffsetDateTime;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -20,6 +18,7 @@ pub async fn post_to_outbox(
     Extension(_claims): Extension<Arc<Claims>>,
     Json(payload): Json<CreateActivity<NoId>>,
 ) -> Result<impl IntoResponse, AppError> {
+    // TODO: message verification
     let message_id = format!("https://{}/messages/{}", &state.domain, Uuid::new_v4());
     let activity_id = format!("https://{}/activities/{}", &state.domain, Uuid::new_v4());
     let payload = CreateActivity {
@@ -36,13 +35,17 @@ pub async fn post_to_outbox(
             to: payload.object.to,
         },
     };
-    state.storage.outbox.insert_local_activity(
-        &activity_id,
-        &payload.actor,
-        &payload.type_field,
-        json!(payload),
-        &payload.object.to[0],
-    ).await?;
+    let stored = StoredOutboxActivity {
+        activity_id: activity_id.clone(),
+        actor_id: payload.actor.clone(),
+        activity_type: payload.type_field.clone(),
+        activity: json!(payload),
+        created_at: OffsetDateTime::now_utc(),
+    };
+    state.storage.outbox
+        .insert_activity(&stored, &payload.object.to[0])
+        .await?;
+    // TODO: put in receiving user's  inbox
     // TODO: send to other server if recipient not local
     Ok((StatusCode::CREATED, Json(payload)).into_response())
 }

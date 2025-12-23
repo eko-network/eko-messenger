@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
+use crate::storage::models::StoredOutboxActivity;
 use crate::storage::traits::OutboxStore;
 use crate::errors::AppError;
-use serde_json::Value;
 
 pub struct PostgresOutboxStore {
     pool: PgPool,
@@ -16,12 +16,9 @@ impl PostgresOutboxStore {
 
 #[async_trait]
 impl OutboxStore for PostgresOutboxStore {
-    async fn insert_local_activity(
+    async fn insert_activity(
         &self,
-        activity_id: &str,
-        actor_id: &str,
-        activity_type: &str,
-        activity_json: Value,
+        activity: &StoredOutboxActivity,
         inbox_actor_id: &str,
     ) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await?;
@@ -31,10 +28,10 @@ impl OutboxStore for PostgresOutboxStore {
             INSERT INTO activities (id, actor_id, activity_type, activity_json)
             VALUES ($1, $2, $3, $4)
             "#,
-            activity_id,
-            actor_id,
-            activity_type,
-            activity_json
+            activity.activity_id,
+            activity.actor_id,
+            activity.activity_type,
+            activity.activity
         )
         .execute(&mut *tx)
         .await?;
@@ -45,7 +42,7 @@ impl OutboxStore for PostgresOutboxStore {
             VALUES ($1, $2)
             "#,
             inbox_actor_id,
-            activity_id
+            activity.activity_id
         )
         .execute(&mut *tx)
         .await?;

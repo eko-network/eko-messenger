@@ -1,9 +1,10 @@
+/// Defines the interface to store and get information
 use async_trait::async_trait;
-use serde_json::Value;
 use uuid::Uuid;
 use crate::{
-    types::PreKeyBundle,
     errors::AppError,
+    storage::models::{StoredActivity, StoredOutboxActivity},
+    types::PreKeyBundle,
 };
 
 #[async_trait]
@@ -11,17 +12,14 @@ pub trait InboxStore: Send + Sync {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-    ) -> Result<Vec<Value>, AppError>;
+    ) -> Result<Vec<StoredActivity>, AppError>;
 }
 
 #[async_trait]
 pub trait OutboxStore: Send + Sync {
-    async fn insert_local_activity(
+    async fn insert_activity(
         &self,
-        activity_id: &str,
-        actor_id: &str,
-        activity_type: &str,
-        activity_json: Value,
+        activity: &StoredOutboxActivity,
         inbox_actor_id: &str,
     ) -> Result<(), crate::errors::AppError>;
 }
