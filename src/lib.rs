@@ -18,7 +18,11 @@ use crate::{
     key_bundle::get_bundle,
     middleware::auth_middleware,
     outbox::post_to_outbox,
-    storage::{Storage, postgres::connection::postgres_storage},
+    storage::{
+        Storage,
+        postgres::connection::postgres_storage,
+        memory::connection::memory_storage,
+    },
 };
 use anyhow::Context;
 use axum::middleware::from_fn_with_state;
@@ -52,7 +56,7 @@ pub struct WebFingerQuery {
     resource: String,
 }
 
-async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
+async fn db_config() -> anyhow::Result<sqlx::Pool<Postgres>> {
     let database_url = var("DATABASE_URL").context("DATABASE_URL not found in environment")?;
     let pool = PgPool::connect_lazy(&database_url).context("Failed to connect to Postgres")?;
 
@@ -61,6 +65,26 @@ async fn db_from_env() -> anyhow::Result<sqlx::Pool<Postgres>> {
         .await
         .context("Failed to run migrations")?;
     Ok(pool)
+}
+
+async fn storage_config() -> anyhow::Result<Storage> {
+    // default storage choice to postgres
+    let storage_backend = var("STORAGE_BACKEND").unwrap_or_else(|_| "postgres".to_string());
+
+    match storage_backend.to_lowercase().as_str() {
+        "memory" => {
+            info!("Using in-memory storage backend");
+            Ok(memory_storage())
+        }
+        "postgres" => {
+            info!("Using PostgreSQL storage backend");
+            let pool = db_config().await?;
+            Ok(postgres_storage(pool))
+        }
+        _ => {
+            anyhow::bail!("Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres' or 'memory'", storage_backend)
+        }
+    }
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -89,8 +113,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
-    let pool = db_from_env().await?;
-    let storage = Arc::new(postgres_storage(pool));
+    let storage = Arc::new(storage_config().await?);
 
     let firebase_auth = FirebaseAuth::new_from_env()?;
     let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
