@@ -1,6 +1,7 @@
 /// Defines the internal system state
 use serde_json::Value;
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct StoredActivity {
@@ -17,4 +18,18 @@ pub struct StoredOutboxActivity {
     pub activity_type: String,
     pub activity: Value,
     pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterDeviceResult {
+    pub did: i32,
+    pub refresh_token: Uuid,
+}
+
+#[derive(Debug, Clone)]
+pub struct RotatedRefreshToken {
+    pub refresh_token: Uuid,
+    pub uid: String,
+    pub did: i32,
+    pub expires_at: OffsetDateTime,
 }

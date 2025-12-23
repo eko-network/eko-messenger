@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::{
     auth::{PreKey, SignedPreKey},
     errors::AppError,
+    storage::models::{RegisterDeviceResult, RotatedRefreshToken},
     storage::traits::DeviceStore,
     types::PreKeyBundle,
 };
@@ -120,7 +121,7 @@ impl DeviceStore for InMemoryDeviceStore {
         ip_address: &str,
         user_agent: &str,
         expires_at: time::OffsetDateTime,
-    ) -> Result<(i32, Uuid), AppError> {
+    ) -> Result<RegisterDeviceResult, AppError> {
         let mut next_did = self.next_did.write().unwrap();
         let did = *next_did;
         *next_did += 1;
@@ -172,7 +173,10 @@ impl DeviceStore for InMemoryDeviceStore {
         signed_pre_keys.insert(did, signed_pre_key_record);
         drop(signed_pre_keys);
 
-        Ok((did, refresh_token))
+        Ok(RegisterDeviceResult {
+            did,
+            refresh_token,
+        })
     }
 
     async fn rotate_refresh_token(
@@ -180,7 +184,7 @@ impl DeviceStore for InMemoryDeviceStore {
         old_token: &Uuid,
         ip_address: &str,
         user_agent: &str,
-    ) -> Result<Option<(Uuid, String, i32, time::OffsetDateTime)>, AppError> {
+    ) -> Result<Option<RotatedRefreshToken>, AppError> {
         let refresh_tokens = self.refresh_tokens.read().unwrap();
         let old_token_record = refresh_tokens.get(old_token).cloned();
         drop(refresh_tokens);
@@ -225,7 +229,12 @@ impl DeviceStore for InMemoryDeviceStore {
         refresh_tokens.insert(new_token, new_token_record);
         drop(refresh_tokens);
 
-        Ok(Some((new_token, device.uid, device.did, expires_at)))
+        Ok(Some(RotatedRefreshToken {
+            refresh_token: new_token,
+            uid: device.uid,
+            did: device.did,
+            expires_at,
+        }))
     }
 
     async fn logout_device(

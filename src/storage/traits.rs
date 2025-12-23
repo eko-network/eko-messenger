@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use uuid::Uuid;
 use crate::{
     errors::AppError,
-    storage::models::{StoredActivity, StoredOutboxActivity},
+    storage::models::{RegisterDeviceResult, RotatedRefreshToken, StoredActivity, StoredOutboxActivity},
     types::PreKeyBundle,
 };
 
@@ -42,14 +42,14 @@ pub trait DeviceStore: Send + Sync {
         ip_address: &str,
         user_agent: &str,
         expires_at: time::OffsetDateTime,
-    ) -> Result<(i32, Uuid), AppError>;
+    ) -> Result<RegisterDeviceResult, AppError>;
 
     async fn rotate_refresh_token(
         &self,
         old_token: &Uuid,
         ip_address: &str,
         user_agent: &str,
-    ) -> Result<Option<(Uuid, String, i32, time::OffsetDateTime)>, AppError>;
+    ) -> Result<Option<RotatedRefreshToken>, AppError>;
 
     async fn logout_device(
         &self,

@@ -105,7 +105,7 @@ impl<T: IdentityProvider> Auth<T> {
             .await?;
         let expires_at =
             time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
-        let (did, refresh_token) = self
+        let register = self
             .storage
             .devices
             .register_device(
@@ -132,7 +132,7 @@ impl<T: IdentityProvider> Auth<T> {
 
         let access_token = self
             .jwt_helper
-            .create_jwt(&uid, did)
+            .create_jwt(&uid, register.did)
             .map_err(|e| anyhow::anyhow!(e))?;
 
         let expires_at =
@@ -140,9 +140,9 @@ impl<T: IdentityProvider> Auth<T> {
 
         let response = LoginResponse {
             uid: uid.clone(),
-            did: did,
+            did: register.did,
             access_token,
-            refresh_token,
+            refresh_token: register.refresh_token,
             expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
             actor: create_person(&uid, domain),
         };
@@ -163,12 +163,12 @@ impl<T: IdentityProvider> Auth<T> {
             .await?;
 
         match result {
-            Some((refresh_token, uid, did, expires_at)) => {
-                let access_token = self.jwt_helper.create_jwt(&uid, did)?;
+            Some(rotated) => {
+                let access_token = self.jwt_helper.create_jwt(&rotated.uid, rotated.did)?;
                 Ok(Json(RefreshResponse {
                     access_token,
-                    refresh_token,
-                    expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
+                    refresh_token: rotated.refresh_token,
+                    expires_at: rotated.expires_at.format(&time::format_description::well_known::Rfc3339)?,
                 }))
             }
             None => Err(AppError::Unauthorized("Invalid refresh token".into())),

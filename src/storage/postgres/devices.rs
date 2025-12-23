@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    auth::{PreKey, SignedPreKey}, errors::AppError, storage::traits::DeviceStore, types::PreKeyBundle
+    auth::{PreKey, SignedPreKey}, errors::AppError, storage::models::{RegisterDeviceResult, RotatedRefreshToken}, storage::traits::DeviceStore, types::PreKeyBundle
 };
 
 pub struct PostgresDeviceStore {
@@ -76,7 +76,7 @@ impl DeviceStore for PostgresDeviceStore {
         ip_address: &str,
         user_agent: &str,
         expires_at: time::OffsetDateTime,
-    ) -> Result<(i32, Uuid), AppError> {
+    ) -> Result<RegisterDeviceResult, AppError> {
         let mut tx = self.pool.begin().await?;
 
         let did = sqlx::query!(
@@ -134,7 +134,10 @@ impl DeviceStore for PostgresDeviceStore {
         .await?;
 
         tx.commit().await?;
-        Ok((did, refresh_token))
+        Ok(RegisterDeviceResult {
+            did,
+            refresh_token,
+        })
     }
 
     async fn rotate_refresh_token(
@@ -142,7 +145,7 @@ impl DeviceStore for PostgresDeviceStore {
         old_token: &Uuid,
         ip_address: &str,
         user_agent: &str,
-    ) -> Result<Option<(Uuid, String, i32, time::OffsetDateTime)>, AppError> {
+    ) -> Result<Option<RotatedRefreshToken>, AppError> {
         let mut tx = self.pool.begin().await?;
 
         let row = sqlx::query!(
@@ -195,7 +198,12 @@ impl DeviceStore for PostgresDeviceStore {
         .token;
 
         tx.commit().await?;
-        Ok(Some((new_token, row.uid, row.did, expires_at)))
+        Ok(Some(RotatedRefreshToken {
+            refresh_token: new_token,
+            uid: row.uid,
+            did: row.did,
+            expires_at,
+        }))
     }
 
     async fn logout_device(&self, refresh_token: &Uuid) -> Result<(), AppError> {
