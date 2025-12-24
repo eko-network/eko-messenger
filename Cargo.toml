@@ -3,6 +3,10 @@ name = "eko-messenger"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+integration-firebase = []
+
 [dependencies]
 anyhow = "1.0.100"
 axum = { version = "0.8.6", features = ["macros"] }
@@ -19,6 +23,7 @@ uuid = { version = "1.18.1", features = ["v4", "serde"] }
 serde_with = {version= "3.16.0", features = ["base64"]}
 tracing-subscriber = {version="0.3.22", features=["env-filter"]}
 tracing = "0.1.43"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 async-trait = "0.1.89"
