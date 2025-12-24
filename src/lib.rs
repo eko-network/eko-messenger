@@ -46,7 +46,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub auth: Arc<Auth<FirebaseAuth>>,
+    pub auth: Arc<Auth>,
     pub domain: String,
     pub storage: Arc<Storage>,
 }

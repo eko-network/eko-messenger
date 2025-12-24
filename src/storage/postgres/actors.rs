@@ -18,7 +18,7 @@ impl PostgresActorStore {
 
 #[async_trait]
 impl ActorStore for PostgresActorStore {
-    async fn ensure_local_actor(
+    async fn upsert_local_actor(
         &self,
         actor_id: &str,
         inbox_url: &str,
@@ -38,6 +38,24 @@ impl ActorStore for PostgresActorStore {
         .await?;
 
         Ok(())
+    }
+
+    async fn is_local_actor(
+        &self,
+        actor_id: &str,
+    ) -> Result<bool, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT is_local
+            FROM actors
+            WHERE id = $1
+            "#,
+            actor_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.is_local).unwrap_or(false))
     }
 }
 

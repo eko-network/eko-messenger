@@ -1,45 +1,20 @@
 mod common;
 
 use base64::{Engine as _, engine::general_purpose};
-use common::{generate_login_request, spawn_app};
+use common::spawn_app;
 use eko_messenger::activitypub::{
-    CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, WithId, actor_url,
+    CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId,
 };
-use reqwest::Client;
 use serde_json::Value;
-use std::env;
 
 #[tokio::test]
 async fn test_send_and_receive_message_to_self() {
     let app = spawn_app().await;
-    let client = Client::new();
-
-    let email = env::var("TEST_USER_EMAIL").expect("TEST_USER_EMAIL not set");
-    let password = env::var("TEST_USER_PASSWORD").expect("TEST_USER_PASSWORD not set");
-
-    let login_req = generate_login_request(email.clone(), password.clone());
-    let login_url = format!("{}/auth/v1/login", &app.address);
-
-    let login_res = client
-        .post(&login_url)
-        .header("User-Agent", "test-client")
-        .json(&login_req)
-        .send()
-        .await
-        .expect("HTTP Login failed");
-
-    let login_status = login_res.status().as_u16();
-    let login_body = login_res.text().await.unwrap();
-    assert_eq!(
-        login_status, 200,
-        "Login failed with status {}: {}",
-        login_status, login_body
-    );
-
-    let login_json: Value = serde_json::from_str(&login_body).unwrap();
-    let auth_token = login_json["accessToken"].as_str().unwrap();
-    let uid = login_json["uid"].as_str().unwrap();
-    let actor_url = format!("http://{}/users/{}", app.domain, uid);
+    let client = &app.client;
+    let login = app.login_http("user@example.com", "password").await;
+    let auth_token = login.access_token;
+    let uid = login.uid;
+    let actor_url = app.actor_url(&uid);
 
     let outbox_url = format!("{}/outbox", &actor_url);
     let message_content = "test message to self".to_string();
@@ -72,7 +47,7 @@ async fn test_send_and_receive_message_to_self() {
 
     let outbox_res = client
         .post(&outbox_url)
-        .bearer_auth(auth_token)
+        .bearer_auth(&auth_token)
         .header("User-Agent", "test-client")
         .json(&outbox_payload)
         .send()
@@ -90,7 +65,7 @@ async fn test_send_and_receive_message_to_self() {
     let inbox_url = format!("{}/inbox", actor_url);
     let inbox_res = client
         .get(&inbox_url)
-        .bearer_auth(auth_token)
+        .bearer_auth(&auth_token)
         .header("User-Agent", "test-client")
         .send()
         .await

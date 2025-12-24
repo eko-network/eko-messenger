@@ -9,10 +9,18 @@ use crate::{
 
 #[async_trait]
 pub trait InboxStore: Send + Sync {
+    /// Returns all of the activities in an actors inbox
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
     ) -> Result<Vec<StoredActivity>, AppError>;
+
+    /// Links an inbox to an existing stored activity.
+    async fn insert_inbox_entry(
+        &self,
+        inbox_actor_id: &str,
+        activity_id: &str,
+    ) -> Result<(), AppError>;
 }
 
 #[async_trait]
@@ -20,7 +28,6 @@ pub trait OutboxStore: Send + Sync {
     async fn insert_activity(
         &self,
         activity: &StoredOutboxActivity,
-        inbox_actor_id: &str,
     ) -> Result<(), crate::errors::AppError>;
 }
 
@@ -59,10 +66,17 @@ pub trait DeviceStore: Send + Sync {
 
 #[async_trait]
 pub trait ActorStore: Send + Sync {
-    async fn ensure_local_actor(
+    /// Upsert a local actor
+    async fn upsert_local_actor(
         &self,
         actor_id: &str,
         inbox_url: &str,
         outbox_url: &str,
     ) -> Result<(), AppError>;
+
+    /// Returns true if the actor exists and is local
+    async fn is_local_actor(
+        &self,
+        actor_id: &str,
+    ) -> Result<bool, AppError>;
 }

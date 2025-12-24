@@ -1,16 +1,16 @@
 use std::sync::Arc;
 use crate::storage::Storage;
 use crate::storage::memory::{
-    inbox::InMemoryInboxStore,
     outbox::InMemoryOutboxStore,
     actors::InMemoryActorStore,
     devices::InMemoryDeviceStore,
 };
 
 pub fn memory_storage() -> Storage {
+    let outbox = Arc::new(InMemoryOutboxStore::new());
     Storage {
-        inbox: Arc::new(InMemoryInboxStore::new()),
-        outbox: Arc::new(InMemoryOutboxStore::new()),
+        inbox: outbox.clone(),
+        outbox,
         actors: Arc::new(InMemoryActorStore::new()),
         devices: Arc::new(InMemoryDeviceStore::new()),
     }

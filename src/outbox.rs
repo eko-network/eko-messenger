@@ -42,10 +42,33 @@ pub async fn post_to_outbox(
         activity: json!(payload),
         created_at: OffsetDateTime::now_utc(),
     };
-    state.storage.outbox
-        .insert_activity(&stored, &payload.object.to[0])
-        .await?;
-    // TODO: put in receiving user's  inbox
-    // TODO: send to other server if recipient not local
+
+    // Save activity
+    state.storage.outbox.insert_activity(&stored).await?;
+
+    // TODO: do we verify the outbox activity (make sure it has all the devices, etc) here?
+    // or in the insert_inbox_entry function probably instead? so all inserts only succeed if valid?
+
+    for recipient_actor_id in &payload.object.to {
+        // If receipient in our server, put entry directly in inbox (can also make a combined function?)
+        if state
+            .storage
+            .actors
+            .is_local_actor(recipient_actor_id)
+            .await?
+        {
+            state
+                .storage
+                .inbox
+                .insert_inbox_entry(recipient_actor_id, &stored.activity_id)
+                .await?;
+        } else {
+            // TODO: federate the message. im thinking we need to do the following:
+            // - Resolve recipient inbox URL (WebFinger/actor fetch), then enqueue some delivery job keyed by (activity_id, target_inbox_url) for retries & idempotency.
+            // - The delivery worker signs and POSTs the activity to the remote inbox.
+            // - Need to figure out what we want to do for activity storage. I guess keep it in there until successful response from server?
+        }
+    }
+
     Ok((StatusCode::CREATED, Json(payload)).into_response())
 }

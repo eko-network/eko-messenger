@@ -43,5 +43,25 @@ impl InboxStore for PostgresInboxStore {
             })
             .collect())
     }
+
+    async fn insert_inbox_entry(
+        &self,
+        inbox_actor_id: &str,
+        activity_id: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO inbox_entries (inbox_actor_id, activity_id)
+            VALUES ($1, $2)
+            ON CONFLICT (inbox_actor_id, activity_id) DO NOTHING
+            "#,
+            inbox_actor_id,
+            activity_id,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::{Json, extract::State, http::StatusCode};
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
 use serde_with::serde_as;
@@ -49,7 +50,7 @@ pub struct LoginRequest {
     pub signed_pre_key: SignedPreKey,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
     pub uid: String,
@@ -60,32 +61,29 @@ pub struct LoginResponse {
     pub actor: Person,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshResponse {
     pub access_token: String,
     pub refresh_token: Uuid,
     pub expires_at: String,
 }
-pub trait IdentityProvider {
-    fn login_with_email(
-        &self,
-        email: String,
-        password: String,
-    ) -> impl std::future::Future<Output = Result<String, AppError>> + Send;
+#[async_trait]
+pub trait IdentityProvider: Send + Sync {
+    async fn login_with_email(&self, email: String, password: String) -> Result<String, AppError>;
 }
 
-pub struct Auth<T: IdentityProvider> {
-    provider: T,
+pub struct Auth {
+    provider: Arc<dyn IdentityProvider>,
     storage: Arc<Storage>,
     jwt_helper: JwtHelper,
 }
 
-impl<T: IdentityProvider> Auth<T> {
-    pub fn new(provider: T, storage: Arc<Storage>) -> Self {
+impl Auth {
+    pub fn new<P: IdentityProvider + 'static>(provider: P, storage: Arc<Storage>) -> Self {
         let jwt_helper = JwtHelper::new_from_env().expect("Could not instantiate JwtHelper");
         Self {
-            provider: provider,
+            provider: Arc::new(provider),
             storage,
             jwt_helper,
         }
@@ -127,7 +125,7 @@ impl<T: IdentityProvider> Auth<T> {
         self
             .storage
             .actors
-            .ensure_local_actor(&actor_id, &inbox_url, &outbox_url)
+            .upsert_local_actor(&actor_id, &inbox_url, &outbox_url)
             .await?;
 
         let access_token = self

@@ -29,7 +29,17 @@ cargo run
 ```
 
 ## Testing
+By default, tests run with an in-memory storage backend and a test identity provider (so no Firebase is required):
+```
+cargo test
+```
 
+To run the test suite against Postgres instead, set `TEST_STORAGE_BACKEND` or `STORAGE_BACKEND` to `postgres`
+
+Run Firebase integration tests (requires `FIREBASE_API_KEY` and test user credentials):
+```
+cargo test --features integration-firebase
+```
 
 # Example
 

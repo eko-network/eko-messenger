@@ -30,7 +30,7 @@ impl InMemoryActorStore {
 
 #[async_trait]
 impl ActorStore for InMemoryActorStore {
-    async fn ensure_local_actor(
+    async fn upsert_local_actor(
         &self,
         actor_id: &str,
         inbox_url: &str,
@@ -45,5 +45,16 @@ impl ActorStore for InMemoryActorStore {
         });
 
         Ok(())
+    }
+
+    async fn is_local_actor(
+        &self,
+        actor_id: &str,
+    ) -> Result<bool, AppError> {
+        let actors = self.actors.read().unwrap();
+        Ok(actors
+            .get(actor_id)
+            .map(|a| a.is_local)
+            .unwrap_or(false))
     }
 }

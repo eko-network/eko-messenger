@@ -40,4 +40,14 @@ impl InboxStore for InMemoryInboxStore {
             .cloned()
             .unwrap_or_default())
     }
+
+    async fn insert_inbox_entry(
+        &self,
+        _inbox_actor_id: &str,
+        _activity_id: &str,
+    ) -> Result<(), AppError> {
+        Err(AppError::InternalError(anyhow::anyhow!(
+            "InMemoryInboxStore does not support insert_inbox_entry; use the shared InMemoryOutboxStore-backed inbox wiring"
+        )))
+    }
 }
