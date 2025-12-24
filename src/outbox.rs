@@ -1,8 +1,5 @@
 use crate::{
-    AppState,
-    activitypub::{CreateActivity, EncryptedMessage, NoId, WithId},
-    errors::AppError,
-    jwt_helper::Claims,
+    activitypub::{CreateActivity, EncryptedMessage, NoId, WithId}, errors::AppError, jwt_helper::Claims, storage::models::StoredOutboxActivity, AppState
 };
 use axum::{
     Json, debug_handler,
@@ -11,6 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use time::OffsetDateTime;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -20,6 +18,7 @@ pub async fn post_to_outbox(
     Extension(_claims): Extension<Arc<Claims>>,
     Json(payload): Json<CreateActivity<NoId>>,
 ) -> Result<impl IntoResponse, AppError> {
+    // TODO: message verification
     let message_id = format!("https://{}/messages/{}", &state.domain, Uuid::new_v4());
     let activity_id = format!("https://{}/activities/{}", &state.domain, Uuid::new_v4());
     let payload = CreateActivity {
@@ -36,31 +35,40 @@ pub async fn post_to_outbox(
             to: payload.object.to,
         },
     };
-    let mut tx = state.pool.begin().await?;
-    sqlx::query!(
-        r#"
-        INSERT INTO activities (id, actor_id, activity_type, activity_json)
-        VALUES ($1, $2, $3, $4)
-        "#,
-        activity_id,
-        payload.actor,
-        payload.type_field,
-        json!(payload)
-    )
-    .execute(&mut *tx)
-    .await?;
-    // TODO: send to other server if recipient not local
+    let stored = StoredOutboxActivity {
+        activity_id: activity_id.clone(),
+        actor_id: payload.actor.clone(),
+        activity_type: payload.type_field.clone(),
+        activity: json!(payload),
+        created_at: OffsetDateTime::now_utc(),
+    };
 
-    sqlx::query!(
-        r#"
-        INSERT INTO inbox_entries (inbox_actor_id, activity_id)
-        VALUES ($1, $2)
-        "#,
-        payload.object.to[0],
-        activity_id
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    // Save activity
+    state.storage.outbox.insert_activity(&stored).await?;
+
+    // TODO: do we verify the outbox activity (make sure it has all the devices, etc) here?
+    // or in the insert_inbox_entry function probably instead? so all inserts only succeed if valid?
+
+    for recipient_actor_id in &payload.object.to {
+        // If receipient in our server, put entry directly in inbox (can also make a combined function?)
+        if state
+            .storage
+            .actors
+            .is_local_actor(recipient_actor_id)
+            .await?
+        {
+            state
+                .storage
+                .inbox
+                .insert_inbox_entry(recipient_actor_id, &stored.activity_id)
+                .await?;
+        } else {
+            // TODO: federate the message. im thinking we need to do the following:
+            // - Resolve recipient inbox URL (WebFinger/actor fetch), then enqueue some delivery job keyed by (activity_id, target_inbox_url) for retries & idempotency.
+            // - The delivery worker signs and POSTs the activity to the remote inbox.
+            // - Need to figure out what we want to do for activity storage. I guess keep it in there until successful response from server?
+        }
+    }
+
     Ok((StatusCode::CREATED, Json(payload)).into_response())
 }

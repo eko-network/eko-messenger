@@ -3,6 +3,7 @@ use reqwest;
 use serde::{Deserialize, Serialize};
 use std::env::var_os;
 
+use async_trait::async_trait;
 use crate::auth::IdentityProvider;
 use crate::errors::AppError;
 
@@ -45,6 +46,7 @@ impl FirebaseAuth {
     }
 }
 
+#[async_trait]
 impl IdentityProvider for FirebaseAuth {
     async fn login_with_email(&self, email: String, password: String) -> Result<String, AppError> {
         let url = format!(

@@ -8,6 +8,39 @@ The server is written in Rust and uses the ActivityPub protocol for federation. 
 # [Specification](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
 The specification is found [here](https://github.com/eko-network/eko-messenger/blob/main/SPECIFICATION.md)
 
+# Developing
+## Requirements
+For none nix users:
+* [rust](https://rust-lang.org/tools/install/)
+* [postgres](https://www.postgresql.org/download/)
+* [process-compose](https://github.com/F1bonacc1/process-compose)
+* sqlx: cargo install sqlx-cli
+
+## Starting DB
+Note: Must run with the env variables
+```
+process-compose
+```
+
+## Running Rust server
+Note: Must run with the env variables
+```
+cargo run
+```
+
+## Testing
+By default, tests run with an in-memory storage backend and a test identity provider (so no Firebase is required):
+```
+cargo test
+```
+
+To run the test suite against Postgres instead, set `TEST_STORAGE_BACKEND` or `STORAGE_BACKEND` to `postgres`
+
+Run Firebase integration tests (requires `FIREBASE_API_KEY` and test user credentials):
+```
+cargo test --features integration-firebase
+```
+
 # Example
 
 ## Sending a message

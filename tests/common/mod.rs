@@ -1,16 +1,89 @@
 use eko_messenger::{
-    AppState, app,
-    auth::{Auth, LoginRequest, PreKey, SignedPreKey},
+    AppState,
+    app,
+    auth::{Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey},
     firebase_auth::FirebaseAuth,
+    storage::{Storage, memory::connection::memory_storage, postgres::connection::postgres_storage},
 };
+use async_trait::async_trait;
+use reqwest::Client;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
 pub struct TestApp {
     pub address: String,
-    pub db_pool: PgPool,
     pub domain: String,
+    pub storage: Arc<Storage>,
+    pub client: Client,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StorageBackend {
+    Memory,
+    Postgres,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityBackend {
+    Test,
+    Firebase,
+}
+
+pub struct SpawnOptions {
+    pub storage: StorageBackend,
+    pub identity: IdentityBackend,
+}
+
+impl Default for SpawnOptions {
+    fn default() -> Self {
+        Self {
+            storage: selected_storage_backend(),
+            identity: IdentityBackend::Test,
+        }
+    }
+}
+
+fn selected_storage_backend() -> StorageBackend {
+    let backend = env::var("TEST_STORAGE_BACKEND")
+        .or_else(|_| env::var("STORAGE_BACKEND"))
+        .unwrap_or_else(|_| "memory".to_string());
+
+    match backend.to_lowercase().as_str() {
+        "memory" => StorageBackend::Memory,
+        "postgres" => StorageBackend::Postgres,
+        other => panic!(
+            "Invalid storage backend '{other}'. Use 'memory' or 'postgres' (via TEST_STORAGE_BACKEND or STORAGE_BACKEND)."
+        ),
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct TestIdentityProvider;
+
+fn uid_from_email(email: &str) -> String {
+    let uid: String = email
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if uid.is_empty() {
+        "testuser".to_string()
+    } else {
+        uid
+    }
+}
+
+#[async_trait]
+impl IdentityProvider for TestIdentityProvider {
+    async fn login_with_email(
+        &self,
+        email: String,
+        _password: String,
+    ) -> Result<String, eko_messenger::errors::AppError> {
+        Ok(uid_from_email(&email))
+    }
 }
 
 pub fn generate_login_request(email: String, password: String) -> LoginRequest {
@@ -33,10 +106,29 @@ pub fn generate_login_request(email: String, password: String) -> LoginRequest {
 }
 
 pub async fn spawn_app() -> TestApp {
+    spawn_app_with_options(SpawnOptions::default()).await
+}
+
+pub async fn spawn_app_with_storage(storage: StorageBackend) -> TestApp {
+    spawn_app_with_options(SpawnOptions {
+        storage,
+        ..Default::default()
+    })
+    .await
+}
+
+pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
     tracing_subscriber::fmt()
         .with_env_filter("info")
         .try_init()
         .unwrap_or_else(|_| {});
+
+    if env::var("JWT_SECRET").is_err() {
+        unsafe {
+            env::set_var("JWT_SECRET", "test-jwt-secret-do-not-use-in-prod");
+        }
+    }
+
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind random port");
@@ -44,54 +136,24 @@ pub async fn spawn_app() -> TestApp {
     let address = format!("http://127.0.0.1:{}", port);
     let domain = format!("127.0.0.1:{}", port);
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let db_pool = PgPool::connect(&database_url)
-        .await
-        .expect("Failed to connect to Postgres.");
+    let storage = match options.storage {
+        StorageBackend::Memory => Arc::new(memory_storage()),
+        StorageBackend::Postgres => Arc::new(postgres_storage(postgres_pool().await)),
+    };
 
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations on test database");
-
-    // Clear tables
-    sqlx::query!("TRUNCATE TABLE actors RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate actors table");
-    sqlx::query!("TRUNCATE TABLE activities RESTART IDENTITY CASCADE")
-        .execute(&db_pool).await
-        .expect("Failed to truncate activities table");
-    sqlx::query!("TRUNCATE TABLE inbox_entries RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate inbox_entries table");
-    sqlx::query!("TRUNCATE TABLE devices RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate devices table");
-    sqlx::query!("TRUNCATE TABLE refresh_tokens RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate refresh_tokens table");
-    sqlx::query!("TRUNCATE TABLE pre_keys RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate pre_keys table");
-    sqlx::query!("TRUNCATE TABLE signed_pre_keys RESTART IDENTITY CASCADE")
-        .execute(&db_pool)
-        .await
-        .expect("Failed to truncate signed_pre_keys table");
-
-    let firebase_auth =
-        FirebaseAuth::new_from_env().expect("Failed to create FirebaseAuth from env");
-    let auth_service = Auth::new(firebase_auth, db_pool.clone());
+    let auth_service = match options.identity {
+        IdentityBackend::Test => Auth::new(TestIdentityProvider::default(), storage.clone()),
+        IdentityBackend::Firebase => {
+            let firebase_auth = FirebaseAuth::new_from_env()
+                .expect("Failed to create FirebaseAuth from env");
+            Auth::new(firebase_auth, storage.clone())
+        }
+    };
 
     let app_state = AppState {
         auth: Arc::new(auth_service),
         domain: domain.clone(),
-        pool: db_pool.clone(),
+        storage: storage.clone(),
     };
 
     let app_router = app(app_state, "ConnectInfo".to_string())
@@ -106,9 +168,89 @@ pub async fn spawn_app() -> TestApp {
         .unwrap();
     });
 
+
     TestApp {
         address,
-        db_pool,
         domain,
+        storage,
+        client: Client::new(),
     }
+}
+
+impl TestApp {
+    pub fn actor_url(&self, uid: &str) -> String {
+        format!("http://{}/users/{}", self.domain, uid)
+    }
+
+    pub async fn login_http(&self, email: &str, password: &str) -> LoginResponse {
+        let login_req = generate_login_request(email.to_string(), password.to_string());
+        let login_url = format!("{}/auth/v1/login", &self.address);
+
+        let login_res = self
+            .client
+            .post(&login_url)
+            .header("User-Agent", "test-client")
+            .json(&login_req)
+            .send()
+            .await
+            .expect("HTTP Login failed");
+
+        let status = login_res.status();
+        let body = login_res.text().await.expect("Failed reading login body");
+        assert!(
+            status.is_success(),
+            "Login failed with status {}: {}",
+            status,
+            body
+        );
+
+        serde_json::from_str::<LoginResponse>(&body).expect("Failed to parse login response")
+    }
+}
+
+#[cfg(feature = "integration-firebase")]
+pub async fn spawn_app_firebase() -> TestApp {
+    spawn_app_with_options(SpawnOptions {
+        identity: IdentityBackend::Firebase,
+        ..Default::default()
+    })
+    .await
+}
+
+async fn postgres_pool() -> PgPool {
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set when using the Postgres test backend");
+
+    let schema = format!("test_{}", Uuid::new_v4().simple());
+    let admin_pool = PgPool::connect(&database_url)
+        .await
+        .expect("Failed to connect to Postgres");
+    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\""))
+        .execute(&admin_pool)
+        .await
+        .expect("Failed to create test schema");
+    drop(admin_pool);
+
+    let schema_for_connect = schema.clone();
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .after_connect(move |conn, _meta| {
+            let schema = schema_for_connect.clone();
+            Box::pin(async move {
+                sqlx::query(&format!("SET search_path TO \"{schema}\""))
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to Postgres with schema");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations on test schema");
+
+    pool
 }
