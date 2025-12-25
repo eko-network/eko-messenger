@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::PgPool;
 
 use crate::errors::AppError;
-use crate::storage::models::StoredActivity;
+use crate::storage::models::StoredInboxEntry;
 use crate::storage::traits::InboxStore;
 
 pub struct PostgresInboxStore {
@@ -20,26 +20,26 @@ impl InboxStore for PostgresInboxStore {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-    ) -> Result<Vec<StoredActivity>, AppError> {
+        did: i32,
+    ) -> Result<Vec<StoredInboxEntry>, AppError> {
         let rows = sqlx::query!(
             r#"
-            SELECT a.activity_json, a.created_at
-            FROM activities a
-            INNER JOIN inbox_entries ie ON a.id = ie.activity_id
-            WHERE ie.inbox_actor_id = $1
-            ORDER BY a.created_at DESC
+            DELETE FROM inbox_entries
+            WHERE inbox_actor_id = $1 AND to_did = $2
+            RETURNING actor_id, content, from_did
             "#,
-            inbox_actor_id
+            inbox_actor_id,
+            did
         )
         .fetch_all(&self.pool)
         .await?;
 
         Ok(rows
             .into_iter()
-            .map(|r| StoredActivity {
-                activity: r.activity_json,
-                inbox_actor_id: inbox_actor_id.to_string(),
-                created_at: r.created_at,
+            .map(|r| StoredInboxEntry {
+                actor_id: r.actor_id,
+                from_did: r.from_did,
+                content: r.content,
             })
             .collect())
     }
@@ -47,16 +47,19 @@ impl InboxStore for PostgresInboxStore {
     async fn insert_inbox_entry(
         &self,
         inbox_actor_id: &str,
-        activity_id: &str,
+        to_did: i32,
+        entry: StoredInboxEntry,
     ) -> Result<(), AppError> {
         sqlx::query!(
             r#"
-            INSERT INTO inbox_entries (inbox_actor_id, activity_id)
-            VALUES ($1, $2)
-            ON CONFLICT (inbox_actor_id, activity_id) DO NOTHING
+            INSERT INTO inbox_entries (actor_id, inbox_actor_id, from_did, to_did, content)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
+            entry.actor_id,
             inbox_actor_id,
-            activity_id,
+            entry.from_did,
+            to_did,
+            entry.content
         )
         .execute(&self.pool)
         .await?;
@@ -64,4 +67,3 @@ impl InboxStore for PostgresInboxStore {
         Ok(())
     }
 }
-

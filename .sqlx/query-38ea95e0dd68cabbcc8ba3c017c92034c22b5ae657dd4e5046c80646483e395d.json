@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO activities (id, actor_id, activity_type, activity_json)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38ea95e0dd68cabbcc8ba3c017c92034c22b5ae657dd4e5046c80646483e395d"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO inbox_entries (actor_id, inbox_actor_id, from_did, to_did, content)\n            VALUES ($1, $2, $3, $4, $5)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36c4b80bb4a3f2b57d37f1bd18a2892e6ccc91d6457d401bf64fab97f3a96024"
+}

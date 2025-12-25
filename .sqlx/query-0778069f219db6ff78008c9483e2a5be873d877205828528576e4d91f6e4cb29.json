@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM inbox_entries\n            WHERE inbox_actor_id = $1 AND to_did = $2\n            RETURNING actor_id, content, from_did\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "actor_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "from_did",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0778069f219db6ff78008c9483e2a5be873d877205828528576e4d91f6e4cb29"
+}

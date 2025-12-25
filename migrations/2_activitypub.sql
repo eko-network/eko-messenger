@@ -15,7 +15,9 @@ CREATE TABLE activities (
 
 CREATE TABLE inbox_entries (
     id SERIAL PRIMARY KEY,
+    actor_id TEXT NOT NULL REFERENCES actors(id) ON DELETE CASCADE,
     inbox_actor_id TEXT NOT NULL REFERENCES actors(id) ON DELETE CASCADE,
-    activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
-    UNIQUE (inbox_actor_id, activity_id)
+		from_did INTEGER NOT NULL,
+		to_did INTEGER NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
+		content BYTEA NOT NULL
 );
