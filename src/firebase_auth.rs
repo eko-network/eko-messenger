@@ -1,16 +1,26 @@
 use anyhow::{Result, anyhow};
 use reqwest;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::env::var_os;
+use tracing::info;
 
-use async_trait::async_trait;
 use crate::auth::IdentityProvider;
 use crate::errors::AppError;
+use crate::gcp_token::get_token;
+use async_trait::async_trait;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserInfo {
+    username: String,
+    profile_picture: Option<String>,
+}
 
 pub struct FirebaseAuth {
     api_key: String,
     client: reqwest::Client,
 }
+
 #[derive(Debug, Serialize)]
 struct SignInRequest {
     email: String,
@@ -82,4 +92,30 @@ impl IdentityProvider for FirebaseAuth {
             Err(AppError::Unauthorized(error_response.error.message))
         }
     }
+}
+
+pub async fn get_user_info(client: reqwest::Client) -> anyhow::Result<UserInfo> {
+    let url = format!(
+        "https://firestore.googleapis.com/v1/projects/untitled-2832f/databases/(default)/documents/users/sSzhSpVql8TQX3E4HcCmnBWXVOp2",
+    );
+
+    let token = get_token().await?;
+
+    let response = client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", token.as_str()))
+        .send()
+        .await?;
+    let firestore_response: Value = response.json().await?;
+
+    Ok(UserInfo {
+        username: firestore_response
+            .pointer("/fields/username/stringValue")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or("Unknown".to_string())
+            .to_string(),
+        profile_picture: firestore_response
+            .pointer("/fields/profileData/mapValue/fields/profilePicture/stringValue")
+            .and_then(|v| v.as_str().map(|s| s.to_string())),
+    })
 }

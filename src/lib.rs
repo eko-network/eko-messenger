@@ -2,26 +2,26 @@ pub mod activitypub;
 pub mod auth;
 pub mod errors;
 pub mod firebase_auth;
+pub mod gcp_token;
 pub mod inbox;
 pub mod jwt_helper;
 pub mod key_bundle;
 pub mod middleware;
 pub mod outbox;
-pub mod types;
 pub mod storage;
+pub mod types;
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
-    firebase_auth::FirebaseAuth,
+    firebase_auth::{FirebaseAuth, get_user_info},
+    gcp_token::get_token,
     inbox::get_inbox,
     key_bundle::get_bundle,
     middleware::auth_middleware,
     outbox::post_to_outbox,
     storage::{
-        Storage,
-        postgres::connection::postgres_storage,
-        memory::connection::memory_storage,
+        Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
     },
 };
 use anyhow::Context;
@@ -82,7 +82,10 @@ async fn storage_config() -> anyhow::Result<Storage> {
             Ok(postgres_storage(pool))
         }
         _ => {
-            anyhow::bail!("Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres' or 'memory'", storage_backend)
+            anyhow::bail!(
+                "Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres' or 'memory'",
+                storage_backend
+            )
         }
     }
 }
@@ -126,6 +129,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         storage,
     };
 
+    // Get access token
+    info!("{:?}", get_user_info(reqwest::Client::new()).await?);
     let app = app(app_state, ip_source)?;
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
