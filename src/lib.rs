@@ -14,7 +14,7 @@ use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
     errors::AppError,
-    firebase_auth::{FirebaseAuth, get_user_info},
+    firebase_auth::FirebaseAuth,
     gcp_token::get_token,
     inbox::get_inbox,
     key_bundle::get_bundle,
@@ -93,9 +93,9 @@ async fn storage_config() -> anyhow::Result<Storage> {
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
-        .route("/users/{username}/outbox", post(post_to_outbox))
-        .route("/users/{username}/inbox", get(get_inbox))
-        .route("/users/{username}/keys/bundle.json", get(get_bundle))
+        .route("/users/{uid}/outbox", post(post_to_outbox))
+        .route("/users/{uid}/inbox", get(get_inbox))
+        .route("/users/{uid}/keys/bundle.json", get(get_bundle))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -104,7 +104,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
-        .route("/users/{username}", get(actor_handler))
+        .route("/users/{uid}", get(actor_handler))
         .merge(protected_routes)
         .layer(ip_source.into_extension())
         .with_state(app_state))
@@ -118,8 +118,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let storage = Arc::new(storage_config().await?);
 
-    let firebase_auth = FirebaseAuth::new_from_env()?;
     let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+    let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone())?;
 
     let auth = Auth::new(firebase_auth, storage.clone());
 
@@ -129,8 +129,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         storage,
     };
 
-    // Get access token
-    info!("{:?}", get_user_info(reqwest::Client::new()).await?);
     let app = app(app_state, ip_source)?;
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -214,7 +212,6 @@ async fn actor_handler(
     State(state): State<AppState>,
     Path(uid): Path<String>,
 ) -> Result<Json<Person>, AppError> {
-    let actor = activitypub::create_person(&uid, &state.domain);
-
+    let actor = state.auth.provider.person_from_uid(&uid).await?;
     Ok(Json(actor))
 }

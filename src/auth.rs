@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use axum::{Json, extract::State, http::StatusCode};
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
 use serde_with::serde_as;
@@ -12,7 +12,11 @@ use uuid::Uuid;
 pub const REFRESH_EXPIRATION: i64 = 60 * 60 * 24 * 31;
 
 use crate::{
-    activitypub::{actor_url, create_person, Person}, errors::AppError, jwt_helper::{Claims, JwtHelper}, storage::Storage, AppState
+    AppState,
+    activitypub::{Person, actor_url, create_person},
+    errors::AppError,
+    jwt_helper::{Claims, JwtHelper},
+    storage::Storage,
 };
 use jsonwebtoken;
 
@@ -70,11 +74,17 @@ pub struct RefreshResponse {
 }
 #[async_trait]
 pub trait IdentityProvider: Send + Sync {
-    async fn login_with_email(&self, email: String, password: String) -> Result<String, AppError>;
+    /// Returns actor and uid
+    async fn login_with_email(
+        &self,
+        email: String,
+        password: String,
+    ) -> Result<(Person, String), AppError>;
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError>;
 }
 
 pub struct Auth {
-    provider: Arc<dyn IdentityProvider>,
+    pub provider: Arc<dyn IdentityProvider>,
     storage: Arc<Storage>,
     jwt_helper: JwtHelper,
 }
@@ -96,9 +106,8 @@ impl Auth {
         user_agent: &str,
         domain: &str,
     ) -> Result<Json<LoginResponse>, AppError> {
-        let uid = self
+        let (actor, uid) = self
             .provider
-            //FIXME: pointles clone
             .login_with_email(req.email.clone(), req.password.clone())
             .await?;
         let expires_at =
@@ -122,8 +131,7 @@ impl Auth {
         let actor_id = actor_url(domain, &uid);
         let inbox_url = format!("{}/inbox", actor_id);
         let outbox_url = format!("{}/outbox", actor_id);
-        self
-            .storage
+        self.storage
             .actors
             .upsert_local_actor(&actor_id, &inbox_url, &outbox_url)
             .await?;
@@ -142,7 +150,7 @@ impl Auth {
             access_token,
             refresh_token: register.refresh_token,
             expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
-            actor: create_person(&uid, domain),
+            actor,
         };
 
         Ok(Json(response))
@@ -166,7 +174,9 @@ impl Auth {
                 Ok(Json(RefreshResponse {
                     access_token,
                     refresh_token: rotated.refresh_token,
-                    expires_at: rotated.expires_at.format(&time::format_description::well_known::Rfc3339)?,
+                    expires_at: rotated
+                        .expires_at
+                        .format(&time::format_description::well_known::Rfc3339)?,
                 }))
             }
             None => Err(AppError::Unauthorized("Invalid refresh token".into())),
@@ -174,7 +184,7 @@ impl Auth {
     }
 
     pub async fn logout(&self, refresh_token: &Uuid) -> Result<(), AppError> {
-        self.storage.devices.logout_device(refresh_token).await    
+        self.storage.devices.logout_device(refresh_token).await
     }
 
     pub fn verify_access_token(&self, token: &str) -> Result<Claims, AppError> {

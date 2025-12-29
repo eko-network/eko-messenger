@@ -3,20 +3,23 @@ use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env::var_os;
-use tracing::info;
 
+use crate::activitypub::{Person, create_person};
 use crate::auth::IdentityProvider;
 use crate::errors::AppError;
 use crate::gcp_token::get_token;
 use async_trait::async_trait;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct UserInfo {
     username: String,
     profile_picture: Option<String>,
+    summary: Option<String>,
+    name: Option<String>,
 }
 
 pub struct FirebaseAuth {
+    domain: String,
     api_key: String,
     client: reqwest::Client,
 }
@@ -44,12 +47,13 @@ struct ErrorDetail {
 }
 
 impl FirebaseAuth {
-    pub fn new_from_env() -> Result<Self> {
+    pub fn new_from_env_with_domain(domain: String) -> Result<Self> {
         let api_key = var_os("FIREBASE_API_KEY")
             .expect("FIREBASE_API_KEY not found in enviroment")
             .into_string()
             .map_err(|_| anyhow!("Failed to convert from OsString to String"))?;
         Ok(Self {
+            domain,
             api_key,
             client: reqwest::Client::new(),
         })
@@ -58,7 +62,11 @@ impl FirebaseAuth {
 
 #[async_trait]
 impl IdentityProvider for FirebaseAuth {
-    async fn login_with_email(&self, email: String, password: String) -> Result<String, AppError> {
+    async fn login_with_email(
+        &self,
+        email: String,
+        password: String,
+    ) -> Result<(Person, String), AppError> {
         let url = format!(
             "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={}",
             self.api_key
@@ -83,7 +91,8 @@ impl IdentityProvider for FirebaseAuth {
                 .json::<SignInResponse>()
                 .await
                 .map_err(|e| AppError::InternalError(e.into()))?;
-            Ok(sign_in_response.local_id)
+            let uid = sign_in_response.local_id;
+            Ok((Self::person_from_uid(self, &uid).await?, uid))
         } else {
             let error_response = response
                 .json::<ErrorResponse>()
@@ -92,30 +101,37 @@ impl IdentityProvider for FirebaseAuth {
             Err(AppError::Unauthorized(error_response.error.message))
         }
     }
-}
 
-pub async fn get_user_info(client: reqwest::Client) -> anyhow::Result<UserInfo> {
-    let url = format!(
-        "https://firestore.googleapis.com/v1/projects/untitled-2832f/databases/(default)/documents/users/sSzhSpVql8TQX3E4HcCmnBWXVOp2",
-    );
-
-    let token = get_token().await?;
-
-    let response = client
-        .get(url)
-        .header("Authorization", format!("Bearer {}", token.as_str()))
-        .send()
-        .await?;
-    let firestore_response: Value = response.json().await?;
-
-    Ok(UserInfo {
-        username: firestore_response
-            .pointer("/fields/username/stringValue")
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .unwrap_or("Unknown".to_string())
-            .to_string(),
-        profile_picture: firestore_response
-            .pointer("/fields/profileData/mapValue/fields/profilePicture/stringValue")
-            .and_then(|v| v.as_str().map(|s| s.to_string())),
-    })
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
+        let token = get_token().await?;
+        let url = format!(
+            "https://firestore.googleapis.com/v1/projects/untitled-2832f/databases/(default)/documents/users/{}",
+            uid
+        );
+        let response = self
+            .client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", token.as_str()))
+            .send()
+            .await?;
+        let firestore_response: Value = response.json().await?;
+        Ok(create_person(
+            &self.domain,
+            uid,
+            firestore_response
+                .pointer("/fields/profileData/mapValue/fields/bio/stringValue")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
+            firestore_response
+                .pointer("/fields/username/stringValue")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or("Unknown".to_string())
+                .to_string(),
+            firestore_response
+                .pointer("/fields/name/stringValue")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
+            firestore_response
+                .pointer("/fields/profileData/mapValue/fields/profilePicture/stringValue")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
+        ))
+    }
 }
