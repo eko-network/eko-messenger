@@ -3,6 +3,7 @@ use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env::var_os;
+use tracing::info;
 
 use crate::activitypub::{Person, create_person};
 use crate::auth::IdentityProvider;
@@ -111,7 +112,7 @@ impl IdentityProvider for FirebaseAuth {
         let response = self
             .client
             .get(url)
-            .header("Authorization", format!("Bearer {}", token.as_str()))
+            .bearer_auth(token.as_str())
             .send()
             .await?;
         let firestore_response: Value = response.json().await?;
@@ -133,5 +134,39 @@ impl IdentityProvider for FirebaseAuth {
                 .pointer("/fields/profileData/mapValue/fields/profilePicture/stringValue")
                 .and_then(|v| v.as_str().map(|s| s.to_string())),
         ))
+    }
+
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+        let token = get_token().await?;
+        let url = "https://firestore.googleapis.com/v1/projects/untitled-2832f/databases/(default)/documents:runQuery";
+
+        let body = serde_json::json!({
+            "structuredQuery": {
+                "from": [{ "collectionId": "users" }],
+                "where": {
+                    "fieldFilter": {
+                        "field": { "fieldPath": "username" },
+                        "op": "EQUAL",
+                        "value": { "stringValue": username }
+                    }
+                },
+                "limit": 1
+            }
+        });
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(token.as_str())
+            .json(&body)
+            .send()
+            .await?;
+        let firestore_response: Value = response.json().await?;
+        let uid = firestore_response
+            .get(0)
+            .and_then(|v| v.pointer("/document/name"))
+            .and_then(|v| v.as_str())
+            .and_then(|v| v.split("/").filter(|seg| !seg.is_empty()).last())
+            .ok_or(AppError::NotFound("User Not Found".to_string()))?;
+        Ok(uid.to_string())
     }
 }

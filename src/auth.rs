@@ -81,6 +81,7 @@ pub trait IdentityProvider: Send + Sync {
         password: String,
     ) -> Result<(Person, String), AppError>;
     async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError>;
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError>;
 }
 
 pub struct Auth {

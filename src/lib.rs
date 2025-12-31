@@ -10,6 +10,7 @@ pub mod middleware;
 pub mod outbox;
 pub mod storage;
 pub mod types;
+pub mod webfinger;
 use crate::{
     activitypub::Person,
     auth::{Auth, login_handler, logout_handler, refresh_token_handler},
@@ -23,6 +24,7 @@ use crate::{
     storage::{
         Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
     },
+    webfinger::webfinger_handler,
 };
 use anyhow::Context;
 use axum::middleware::from_fn_with_state;
@@ -49,11 +51,6 @@ pub struct AppState {
     pub auth: Arc<Auth>,
     pub domain: String,
     pub storage: Arc<Storage>,
-}
-
-#[derive(Deserialize)]
-pub struct WebFingerQuery {
-    resource: String,
 }
 
 async fn db_config() -> anyhow::Result<sqlx::Pool<Postgres>> {
@@ -122,7 +119,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone())?;
 
     let auth = Auth::new(firebase_auth, storage.clone());
-
+    let _ = auth.provider.uid_from_username("eli").await;
     let app_state = AppState {
         auth: Arc::new(auth),
         domain,
@@ -168,44 +165,6 @@ async fn root_handler() -> Html<&'static str> {
         </body>
         </html>
     ")
-}
-
-async fn webfinger_handler(
-    State(state): State<AppState>,
-    Query(query): Query<WebFingerQuery>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let resource = query.resource;
-    if !resource.starts_with("acct:") {
-        return Err(AppError::BadRequest("Invalid resource format".to_string()));
-    }
-
-    let parts: Vec<&str> = resource.trim_start_matches("acct:").split('@').collect();
-    if parts.len() != 2 {
-        return Err(AppError::BadRequest("Invalid resource format".to_string()));
-    }
-    let username = parts[0];
-    let domain = parts[1];
-
-    if domain != state.domain {
-        return Err(AppError::NotFound(
-            "User not found on this domain".to_string(),
-        ));
-    }
-
-    let actor_url = format!("http://{}/users/{}", state.domain, username);
-
-    let jrd = serde_json::json!({
-        "subject": resource,
-        "links": [
-            {
-                "rel": "self",
-                "type": "application/activity+json",
-                "href": actor_url,
-            }
-        ]
-    });
-
-    Ok(Json(jrd))
 }
 
 async fn actor_handler(

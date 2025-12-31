@@ -1,0 +1,52 @@
+use axum::{
+    Json,
+    extract::{Query, State},
+};
+use serde::Deserialize;
+
+use crate::{AppState, errors::AppError};
+
+#[derive(Deserialize)]
+pub struct WebFingerQuery {
+    resource: String,
+}
+
+pub async fn webfinger_handler(
+    State(state): State<AppState>,
+    Query(query): Query<WebFingerQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let resource = query.resource;
+    if !resource.starts_with("acct:") {
+        return Err(AppError::BadRequest("Invalid resource format".to_string()));
+    }
+
+    let parts: Vec<&str> = resource.trim_start_matches("acct:").split('@').collect();
+    if parts.len() != 2 {
+        return Err(AppError::BadRequest("Invalid resource format".to_string()));
+    }
+    let username = parts[0];
+    let domain = parts[1];
+
+    if domain != state.domain {
+        return Err(AppError::NotFound(
+            "User not found on this domain".to_string(),
+        ));
+    }
+
+    let uid = state.auth.provider.uid_from_username(username).await?;
+
+    let actor_url = format!("http://{}/users/{}", state.domain, uid);
+
+    let jrd = serde_json::json!({
+        "subject": resource,
+        "links": [
+            {
+                "rel": "self",
+                "type": "application/activity+json",
+                "href": actor_url,
+            }
+        ]
+    });
+
+    Ok(Json(jrd))
+}
