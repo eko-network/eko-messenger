@@ -3,12 +3,11 @@ use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env::var_os;
-use tracing::info;
 
 use crate::activitypub::{Person, create_person};
 use crate::auth::IdentityProvider;
 use crate::errors::AppError;
-use crate::gcp_token::get_token;
+use crate::auth::gcp::get_token;
 use async_trait::async_trait;
 
 #[derive(Debug)]

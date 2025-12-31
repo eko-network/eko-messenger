@@ -1,10 +1,9 @@
 use crate::{
+    activitypub::PreKeyBundle,
     errors::AppError,
     storage::models::{
-        RegisterDeviceResult, RotatedRefreshToken, StoredInboxEntry,
-        StoredOutboxActivity,
+        RegisterDeviceResult, RotatedRefreshToken, StoredInboxEntry, StoredOutboxActivity,
     },
-    types::PreKeyBundle,
 };
 /// Defines the interface to store and get information
 use async_trait::async_trait;

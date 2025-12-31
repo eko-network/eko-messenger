@@ -1,42 +1,28 @@
 pub mod activitypub;
 pub mod auth;
+pub mod config;
+pub mod crypto;
 pub mod errors;
-pub mod firebase_auth;
-pub mod gcp_token;
-pub mod inbox;
-pub mod jwt_helper;
-pub mod key_bundle;
 pub mod middleware;
-pub mod outbox;
 pub mod storage;
-pub mod types;
-pub mod webfinger;
+
 use crate::{
-    activitypub::Person,
-    auth::{Auth, login_handler, logout_handler, refresh_token_handler},
+    activitypub::{Person, get_inbox, post_to_outbox, webfinger_handler},
+    auth::{Auth, FirebaseAuth, login_handler, logout_handler, refresh_token_handler},
+    config::storage_config,
+    crypto::get_bundle,
     errors::AppError,
-    firebase_auth::FirebaseAuth,
-    gcp_token::get_token,
-    inbox::get_inbox,
-    key_bundle::get_bundle,
     middleware::auth_middleware,
-    outbox::post_to_outbox,
-    storage::{
-        Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
-    },
-    webfinger::webfinger_handler,
+    storage::Storage,
 };
-use anyhow::Context;
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     response::{Html, Json},
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
-use serde::Deserialize;
-use sqlx::{PgPool, Postgres};
 use std::{
     env::{self, var},
     net::SocketAddr,
@@ -51,40 +37,6 @@ pub struct AppState {
     pub auth: Arc<Auth>,
     pub domain: String,
     pub storage: Arc<Storage>,
-}
-
-async fn db_config() -> anyhow::Result<sqlx::Pool<Postgres>> {
-    let database_url = var("DATABASE_URL").context("DATABASE_URL not found in environment")?;
-    let pool = PgPool::connect_lazy(&database_url).context("Failed to connect to Postgres")?;
-
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .context("Failed to run migrations")?;
-    Ok(pool)
-}
-
-async fn storage_config() -> anyhow::Result<Storage> {
-    // default storage choice to postgres
-    let storage_backend = var("STORAGE_BACKEND").unwrap_or_else(|_| "postgres".to_string());
-
-    match storage_backend.to_lowercase().as_str() {
-        "memory" => {
-            info!("Using in-memory storage backend");
-            Ok(memory_storage())
-        }
-        "postgres" => {
-            info!("Using PostgreSQL storage backend");
-            let pool = db_config().await?;
-            Ok(postgres_storage(pool))
-        }
-        _ => {
-            anyhow::bail!(
-                "Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres' or 'memory'",
-                storage_backend
-            )
-        }
-    }
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {

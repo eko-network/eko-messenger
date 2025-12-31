@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use eko_messenger::{
     AppState, app,
-    auth::{Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey},
-    firebase_auth::FirebaseAuth,
-    storage::{
-        Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
-    },
+    auth::{Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey},
+    config::{db_config, storage_config},
+    storage::{Storage, memory::connection::memory_storage, postgres::connection::postgres_storage},
 };
 use reqwest::Client;
 use sqlx::PgPool;

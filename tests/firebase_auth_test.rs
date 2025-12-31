@@ -1,7 +1,6 @@
 #![cfg(feature = "integration-firebase")]
 
-use eko_messenger::auth::IdentityProvider;
-use eko_messenger::firebase_auth::FirebaseAuth;
+use eko_messenger::auth::{IdentityProvider, FirebaseAuth};
 use std::env;
 use tokio;
 

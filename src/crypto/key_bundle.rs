@@ -1,4 +1,4 @@
-use crate::{AppState, errors::AppError, types::PreKeyBundle};
+use crate::{AppState, activitypub::PreKeyBundle, errors::AppError};
 use axum::{
     Json,
     extract::{Path, State},

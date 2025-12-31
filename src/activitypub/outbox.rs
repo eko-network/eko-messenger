@@ -2,7 +2,7 @@ use crate::{
     AppState,
     activitypub::{CreateActivity, EncryptedMessage, NoId, WithId},
     errors::AppError,
-    jwt_helper::Claims,
+    auth::Claims,
     storage::models::{StoredInboxEntry, StoredOutboxActivity},
 };
 use axum::{
@@ -20,7 +20,7 @@ use uuid::Uuid;
 #[debug_handler]
 pub async fn post_to_outbox(
     State(state): State<AppState>,
-    Extension(claims): Extension<Arc<Claims>>,
+    Extension(_claims): Extension<Arc<Claims>>,
     Json(payload): Json<CreateActivity<NoId>>,
 ) -> Result<impl IntoResponse, AppError> {
     // TODO: message verification
@@ -41,7 +41,7 @@ pub async fn post_to_outbox(
             to: payload.object.to,
         },
     };
-    let stored = StoredOutboxActivity {
+    let _stored = StoredOutboxActivity {
         activity_id: activity_id.clone(),
         actor_id: payload.actor.clone(),
         activity_type: payload.type_field.clone(),

@@ -3,8 +3,7 @@
 mod common;
 use common::{generate_login_request, spawn_app};
 use common::spawn_app_firebase;
-use eko_messenger::auth::Auth;
-use eko_messenger::firebase_auth::FirebaseAuth;
+use eko_messenger::auth::{Auth, FirebaseAuth};
 use eko_messenger::storage::Storage;
 use reqwest::Client;
 use serde_json::Value;

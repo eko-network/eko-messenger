@@ -2,7 +2,7 @@ use crate::{
     AppState,
     activitypub::{CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, actor_url},
     errors::AppError,
-    jwt_helper::Claims,
+    auth::Claims,
 };
 use axum::{
     Json, debug_handler,

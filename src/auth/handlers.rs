@@ -13,9 +13,9 @@ pub const REFRESH_EXPIRATION: i64 = 60 * 60 * 24 * 31;
 
 use crate::{
     AppState,
-    activitypub::{Person, actor_url, create_person},
+    activitypub::{Person, actor_url},
     errors::AppError,
-    jwt_helper::{Claims, JwtHelper},
+    auth::jwt::{Claims, JwtHelper},
     storage::Storage,
 };
 use jsonwebtoken;
