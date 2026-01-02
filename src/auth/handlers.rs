@@ -7,15 +7,17 @@ use axum_extra::{TypedHeader, headers::UserAgent};
 use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
 use serde_with::serde_as;
+use tracing::info;
 use uuid::Uuid;
 
 pub const REFRESH_EXPIRATION: i64 = 60 * 60 * 24 * 31;
+pub const JWT_LIFESPAN: time::Duration = time::Duration::minutes(15);
 
 use crate::{
     AppState,
     activitypub::{Person, actor_url},
-    errors::AppError,
     auth::jwt::{Claims, JwtHelper},
+    errors::AppError,
     storage::Storage,
 };
 use jsonwebtoken;
@@ -142,8 +144,7 @@ impl Auth {
             .create_jwt(&uid, register.did)
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let expires_at =
-            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
+        let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
 
         let response = LoginResponse {
             uid: uid.clone(),
@@ -172,11 +173,11 @@ impl Auth {
         match result {
             Some(rotated) => {
                 let access_token = self.jwt_helper.create_jwt(&rotated.uid, rotated.did)?;
+                let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
                 Ok(Json(RefreshResponse {
                     access_token,
                     refresh_token: rotated.refresh_token,
-                    expires_at: rotated
-                        .expires_at
+                    expires_at: expires_at
                         .format(&time::format_description::well_known::Rfc3339)?,
                 }))
             }
@@ -189,16 +190,17 @@ impl Auth {
     }
 
     pub fn verify_access_token(&self, token: &str) -> Result<Claims, AppError> {
-        let now = time::OffsetDateTime::now_utc().unix_timestamp() as usize;
+        let data = self.jwt_helper.decrypt_jwt(token);
 
-        let data: jsonwebtoken::TokenData<Claims> = self
-            .jwt_helper
-            .decrypt_jwt(token)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        if data.claims.exp < now {
-            return Err(AppError::Unauthorized("Token has Expired".to_string()));
+        match data {
+            Ok(token_data) => Ok(token_data.claims),
+            Err(e) => match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    Err(AppError::Unauthorized("Token has expired".to_string()))
+                }
+                _ => Err(anyhow::anyhow!(e).into()),
+            },
         }
-        Ok(data.claims)
     }
 }
 
@@ -226,6 +228,7 @@ pub async fn refresh_token_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<RefreshResponse>, AppError> {
+    info!("refresh token request received");
     state
         .auth
         .refresh_token(&req.refresh_token, &ip.to_string(), &user_agent.to_string())

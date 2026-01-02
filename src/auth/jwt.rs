@@ -6,6 +6,8 @@ use jsonwebtoken::{
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
+use crate::auth::handlers::JWT_LIFESPAN;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
@@ -38,7 +40,7 @@ impl JwtHelper {
         let now = OffsetDateTime::now_utc();
         let iat = now.unix_timestamp() as usize;
         // Set expiration to 15 minutes from now
-        let exp = (now + Duration::minutes(15)).unix_timestamp() as usize;
+        let exp = (now + JWT_LIFESPAN).unix_timestamp() as usize;
 
         let claims = Claims {
             sub: uid.to_string(),
