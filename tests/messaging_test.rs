@@ -101,7 +101,7 @@ async fn test_send_and_receive_message_to_self() {
     );
     assert_eq!(
         encrypted_note["attributedTo"],
-        format!("http://{}/users/{}", app.domain, uid),
+        format!("{}/users/{}", app.domain, uid),
         "AttributedTo mismatch"
     );
 }

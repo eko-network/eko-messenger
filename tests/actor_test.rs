@@ -32,22 +32,22 @@ async fn test_get_user_actor() {
     assert_eq!(actor["type"], "Person", "Actor type should be Person");
     assert_eq!(
         actor["id"],
-        format!("http://{}/users/{}", app.domain, uid),
+        format!("{}/users/{}", app.domain, uid),
         "Actor ID mismatch"
     );
     assert_eq!(
         actor["inbox"],
-        format!("http://{}/users/{}/inbox", app.domain, uid),
+        format!("{}/users/{}/inbox", app.domain, uid),
         "Inbox URL mismatch"
     );
     assert_eq!(
         actor["outbox"],
-        format!("http://{}/users/{}/outbox", app.domain, uid),
+        format!("{}/users/{}/outbox", app.domain, uid),
         "Outbox URL mismatch"
     );
     assert_eq!(
         actor["keyBundle"],
-        format!("http://{}/users/{}/keys/bundle.json", app.domain, uid),
+        format!("{}/users/{}/keys/bundle.json", app.domain, uid),
         "Key bundle URL mismatch"
     );
     assert_eq!(

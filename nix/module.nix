@@ -75,6 +75,13 @@ in {
       default = null;
       description = "";
     };
+
+    firebaseServiceAccount = lib.mkOption {
+      type = lib.types.str;
+      default = null;
+      description = "";
+    };
+
     jwtSecret = lib.mkOption {
       type = lib.types.str;
       default = null;
@@ -124,11 +131,13 @@ in {
       
       environment = {
         DATABASE_URL = cfg.databaseUrl;
+        PORT = cfg.port;
         DOMAIN = cfg.domain;
         IP_SOURCE = cfg.ipSource;
         RUST_LOG = cfg.logLevel;
         FIREBASE_API_KEY = cfg.firebaseApiKey;
         JWT_SECRET = cfg.jwtSecret;
+        GOOGLE_APPLICATION_CREDENTIALS = cfg.firebaseServiceAccount;
       };
     } ;
   };

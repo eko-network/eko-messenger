@@ -1,5 +1,4 @@
 pub mod firebase;
-pub mod gcp;
 pub mod handlers;
 pub mod jwt;
 

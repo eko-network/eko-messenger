@@ -58,7 +58,12 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .layer(ip_source.into_extension())
         .with_state(app_state))
 }
-
+fn port_from_env() -> u16 {
+    var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000)
+}
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // logging
     tracing_subscriber::fmt()
@@ -66,12 +71,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let storage = Arc::new(storage_config().await?);
+    let port = port_from_env();
 
-    let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
-    let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone())?;
+    let domain = var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port));
+    let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone()).await?;
 
     let auth = Auth::new(firebase_auth, storage.clone());
-    let _ = auth.provider.uid_from_username("eli").await;
     let app_state = AppState {
         auth: Arc::new(auth),
         domain,
@@ -80,7 +85,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = app(app_state, ip_source)?;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     info!("Server listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await?;

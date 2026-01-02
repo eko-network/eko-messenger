@@ -1,8 +1,8 @@
 use crate::{
     AppState,
     activitypub::{CreateActivity, EncryptedMessage, NoId, WithId},
-    errors::AppError,
     auth::Claims,
+    errors::AppError,
     storage::models::{StoredInboxEntry, StoredOutboxActivity},
 };
 use axum::{
@@ -52,8 +52,6 @@ pub async fn post_to_outbox(
     // TODO: do we verify the outbox activity (make sure it has all the devices, etc) here?
     // or in the insert_inbox_entry function probably instead? so all inserts only succeed if valid?
 
-    info!("POST");
-    info!("{:?}", payload);
     //This maybe shouldn't be a loop, group messages are differernt
     for recipient_actor_id in &payload.object.to {
         // If receipient in our server, put entry directly in inbox (can also make a combined function?)

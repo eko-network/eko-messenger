@@ -1,27 +1,24 @@
 use anyhow::{Result, anyhow};
+use gcp_auth::{Token, TokenProvider};
 use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env::var_os;
+use std::sync::Arc;
+use tokio::fs;
 
-use crate::activitypub::{Person, create_person};
-use crate::auth::IdentityProvider;
-use crate::errors::AppError;
-use crate::auth::gcp::get_token;
+use crate::{
+    activitypub::{Person, create_person},
+    auth::IdentityProvider,
+    errors::AppError,
+};
 use async_trait::async_trait;
-
-#[derive(Debug)]
-pub struct UserInfo {
-    username: String,
-    profile_picture: Option<String>,
-    summary: Option<String>,
-    name: Option<String>,
-}
 
 pub struct FirebaseAuth {
     domain: String,
-    api_key: String,
     client: reqwest::Client,
+    project_id: String,
+    token_provider: Arc<dyn TokenProvider>,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,16 +43,36 @@ struct ErrorDetail {
     message: String,
 }
 
+async fn get_token(provider: &Arc<dyn TokenProvider>) -> Result<Arc<Token>, gcp_auth::Error> {
+    provider
+        .token(&[
+            "https://www.googleapis.com/auth/datastore",
+            "https://www.googleapis.com/auth/identitytoolkit",
+        ])
+        .await
+}
+
 impl FirebaseAuth {
-    pub fn new_from_env_with_domain(domain: String) -> Result<Self> {
-        let api_key = var_os("FIREBASE_API_KEY")
-            .expect("FIREBASE_API_KEY not found in enviroment")
+    pub async fn new_from_env_with_domain(domain: String) -> Result<Self> {
+        let service_account_path = var_os("GOOGLE_APPLICATION_CREDENTIALS")
+            .expect("GOOGLE_APPLICATION_CREDENTIALS not found in enviroment")
             .into_string()
             .map_err(|_| anyhow!("Failed to convert from OsString to String"))?;
+
+        let service_account: Value =
+            serde_json::from_str(&fs::read_to_string(service_account_path).await?)?;
+
+        let project_id: String = service_account
+            .pointer("/project_id")
+            .and_then(|v| v.as_str())
+            .ok_or(anyhow!("project_id not found in service account"))?
+            .to_string();
+        let provider = gcp_auth::provider().await?;
         Ok(Self {
+            project_id,
             domain,
-            api_key,
             client: reqwest::Client::new(),
+            token_provider: provider,
         })
     }
 }
@@ -67,10 +84,8 @@ impl IdentityProvider for FirebaseAuth {
         email: String,
         password: String,
     ) -> Result<(Person, String), AppError> {
-        let url = format!(
-            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={}",
-            self.api_key
-        );
+        let token = get_token(&self.token_provider).await?;
+        let url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword";
 
         let request_body = SignInRequest {
             email: email,
@@ -80,7 +95,8 @@ impl IdentityProvider for FirebaseAuth {
 
         let response = self
             .client
-            .post(&url)
+            .post(url)
+            .bearer_auth(token.as_str())
             .json(&request_body)
             .send()
             .await
@@ -103,10 +119,10 @@ impl IdentityProvider for FirebaseAuth {
     }
 
     async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
-        let token = get_token().await?;
+        let token = get_token(&self.token_provider).await?;
         let url = format!(
-            "https://firestore.googleapis.com/v1/projects/untitled-2832f/databases/(default)/documents/users/{}",
-            uid
+            "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents/users/{}",
+            self.project_id, uid
         );
         let response = self
             .client
@@ -120,24 +136,31 @@ impl IdentityProvider for FirebaseAuth {
             uid,
             firestore_response
                 .pointer("/fields/profileData/mapValue/fields/bio/stringValue")
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             firestore_response
                 .pointer("/fields/username/stringValue")
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
                 .unwrap_or("Unknown".to_string())
                 .to_string(),
             firestore_response
                 .pointer("/fields/name/stringValue")
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             firestore_response
                 .pointer("/fields/profileData/mapValue/fields/profilePicture/stringValue")
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         ))
     }
 
     async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
-        let token = get_token().await?;
-        let url = "https://firestore.googleapis.com/v1/projects/untitled-2832f/databases/(default)/documents:runQuery";
+        let token = get_token(&self.token_provider).await?;
+        let url = format!(
+            "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:runQuery",
+            self.project_id
+        );
 
         let body = serde_json::json!({
             "structuredQuery": {

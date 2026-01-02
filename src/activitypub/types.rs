@@ -116,5 +116,5 @@ pub struct PreKeyBundle {
 }
 
 pub fn actor_url(domain: &str, uid: &str) -> String {
-    return format!("http://{}/users/{}", domain, uid);
+    return format!("{}/users/{}", domain, uid);
 }

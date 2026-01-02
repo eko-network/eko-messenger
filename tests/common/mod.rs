@@ -1,9 +1,13 @@
 use async_trait::async_trait;
 use eko_messenger::{
     AppState, app,
-    auth::{Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey},
+    auth::{
+        Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey,
+    },
     config::{db_config, storage_config},
-    storage::{Storage, memory::connection::memory_storage, postgres::connection::postgres_storage},
+    storage::{
+        Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
+    },
 };
 use reqwest::Client;
 use sqlx::PgPool;
@@ -94,7 +98,10 @@ impl IdentityProvider for TestIdentityProvider {
         Ok((person, uid))
     }
 
-    async fn person_from_uid(&self, uid: &str) -> Result<eko_messenger::activitypub::Person, eko_messenger::errors::AppError> {
+    async fn person_from_uid(
+        &self,
+        uid: &str,
+    ) -> Result<eko_messenger::activitypub::Person, eko_messenger::errors::AppError> {
         use eko_messenger::activitypub::create_person;
         Ok(create_person(
             &self.domain,
@@ -106,7 +113,10 @@ impl IdentityProvider for TestIdentityProvider {
         ))
     }
 
-    async fn uid_from_username(&self, username: &str) -> Result<String, eko_messenger::errors::AppError> {
+    async fn uid_from_username(
+        &self,
+        username: &str,
+    ) -> Result<String, eko_messenger::errors::AppError> {
         // In test mode, username is the uid
         Ok(username.to_string())
     }
@@ -160,7 +170,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         .expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
-    let domain = format!("127.0.0.1:{}", port);
+    let domain = format!("http://127.0.0.1:{}", port);
 
     let storage = match options.storage {
         StorageBackend::Memory => Arc::new(memory_storage()),
@@ -168,10 +178,13 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
     };
 
     let auth_service = match options.identity {
-        IdentityBackend::Test => Auth::new(TestIdentityProvider::new(domain.clone()), storage.clone()),
+        IdentityBackend::Test => {
+            Auth::new(TestIdentityProvider::new(domain.clone()), storage.clone())
+        }
         IdentityBackend::Firebase => {
-            let firebase_auth =
-                FirebaseAuth::new_from_env_with_domain(domain.clone()).expect("Failed to create FirebaseAuth from env");
+            let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone())
+                .await
+                .expect("Failed to create FirebaseAuth from env");
             Auth::new(firebase_auth, storage.clone())
         }
     };
@@ -204,7 +217,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
 
 impl TestApp {
     pub fn actor_url(&self, uid: &str) -> String {
-        format!("http://{}/users/{}", self.domain, uid)
+        format!("{}/users/{}", self.domain, uid)
     }
 
     pub async fn login_http(&self, email: &str, password: &str) -> LoginResponse {
