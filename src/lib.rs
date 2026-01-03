@@ -5,15 +5,17 @@ pub mod crypto;
 pub mod errors;
 pub mod middleware;
 pub mod storage;
+pub mod websocket;
 
 use crate::{
-    activitypub::{Person, get_inbox, post_to_outbox, webfinger_handler},
+    activitypub::{Person, capabilities_handler, get_inbox, post_to_outbox, webfinger_handler},
     auth::{Auth, FirebaseAuth, login_handler, logout_handler, refresh_token_handler},
     config::storage_config,
     crypto::get_bundle,
     errors::AppError,
     middleware::auth_middleware,
     storage::Storage,
+    websocket::{WebSockets, ws_handler},
 };
 use axum::middleware::from_fn_with_state;
 use axum::{
@@ -23,6 +25,7 @@ use axum::{
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
+use dashmap::DashMap;
 use std::{
     env::{self, var},
     net::SocketAddr,
@@ -37,6 +40,7 @@ pub struct AppState {
     pub auth: Arc<Auth>,
     pub domain: String,
     pub storage: Arc<Storage>,
+    pub sockets: WebSockets,
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -45,6 +49,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
         .route("/users/{uid}/keys/bundle.json", get(get_bundle))
+        .route("/ws", get(ws_handler))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -54,6 +59,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route("/auth/v1/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{uid}", get(actor_handler))
+        .route("/.well-known/ecp", get(capabilities_handler))
         .merge(protected_routes)
         .layer(ip_source.into_extension())
         .with_state(app_state))
@@ -77,10 +83,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone()).await?;
 
     let auth = Auth::new(firebase_auth, storage.clone());
+    let online_clients = Arc::new(DashMap::new());
     let app_state = AppState {
         auth: Arc::new(auth),
         domain,
         storage,
+        sockets: online_clients,
     };
 
     let app = app(app_state, ip_source)?;
