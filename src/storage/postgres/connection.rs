@@ -1,12 +1,10 @@
-use sqlx::PgPool;
-use std::sync::Arc;
 use crate::storage::Storage;
 use crate::storage::postgres::{
-    inbox::PostgresInboxStore,
+    actors::PostgresActorStore, devices::PostgresDeviceStore, inbox::PostgresInboxStore,
     outbox::PostgresOutboxStore,
-    actors::PostgresActorStore,
-    devices::PostgresDeviceStore,
 };
+use sqlx::PgPool;
+use std::sync::Arc;
 
 pub fn postgres_storage(pool: PgPool) -> Storage {
     Storage {
@@ -16,4 +14,3 @@ pub fn postgres_storage(pool: PgPool) -> Storage {
         devices: Arc::new(PostgresDeviceStore::new(pool)),
     }
 }
-

@@ -1,10 +1,7 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
 
-use crate::{
-    errors::AppError,
-    storage::traits::ActorStore,
-};
+use crate::{errors::AppError, storage::traits::ActorStore};
 
 pub struct PostgresActorStore {
     pool: PgPool,
@@ -40,10 +37,7 @@ impl ActorStore for PostgresActorStore {
         Ok(())
     }
 
-    async fn is_local_actor(
-        &self,
-        actor_id: &str,
-    ) -> Result<bool, AppError> {
+    async fn is_local_actor(&self, actor_id: &str) -> Result<bool, AppError> {
         let row = sqlx::query!(
             r#"
             SELECT is_local
@@ -58,4 +52,3 @@ impl ActorStore for PostgresActorStore {
         Ok(row.map(|r| r.is_local).unwrap_or(false))
     }
 }
-

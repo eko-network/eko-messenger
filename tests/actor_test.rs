@@ -21,11 +21,7 @@ async fn test_get_user_actor() {
 
     let status = res.status().as_u16();
     let body = res.text().await.unwrap();
-    assert_eq!(
-        status, 200,
-        "Expected OK status, got {}: {}",
-        status, body
-    );
+    assert_eq!(status, 200, "Expected OK status, got {}: {}", status, body);
 
     let actor: Value = serde_json::from_str(&body).expect("Failed to parse actor response");
 

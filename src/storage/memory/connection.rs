@@ -1,10 +1,8 @@
-use std::sync::Arc;
 use crate::storage::Storage;
 use crate::storage::memory::{
-    outbox::InMemoryOutboxStore,
-    actors::InMemoryActorStore,
-    devices::InMemoryDeviceStore,
+    actors::InMemoryActorStore, devices::InMemoryDeviceStore, outbox::InMemoryOutboxStore,
 };
+use std::sync::Arc;
 
 pub fn memory_storage() -> Storage {
     let outbox = Arc::new(InMemoryOutboxStore::new());

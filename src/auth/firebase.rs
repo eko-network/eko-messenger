@@ -29,8 +29,14 @@ struct SignInRequest {
     return_secure_token: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ApiResponse {
+    Success(SuccessResponse),
+    Error(ErrorResponse),
+}
 #[derive(Debug, Deserialize)]
-struct SignInResponse {
+struct SuccessResponse {
     #[serde(rename = "localId")]
     local_id: String,
 }
@@ -102,19 +108,21 @@ impl IdentityProvider for FirebaseAuth {
             .await
             .map_err(|e| AppError::InternalError(e.into()))?;
 
-        if response.status().is_success() {
-            let sign_in_response = response
-                .json::<SignInResponse>()
-                .await
-                .map_err(|e| AppError::InternalError(e.into()))?;
-            let uid = sign_in_response.local_id;
-            Ok((Self::person_from_uid(self, &uid).await?, uid))
-        } else {
-            let error_response = response
-                .json::<ErrorResponse>()
-                .await
-                .map_err(|e| AppError::InternalError(e.into()))?;
-            Err(AppError::Unauthorized(error_response.error.message))
+        let status = response.status();
+        let api_response = response
+            .json::<ApiResponse>()
+            .await
+            .map_err(|e| AppError::InternalError(e.into()))?;
+
+        match (status.is_success(), api_response) {
+            (true, ApiResponse::Success(sign_in)) => {
+                let uid = sign_in.local_id;
+                Ok((Self::person_from_uid(self, &uid).await?, uid))
+            }
+            (false, ApiResponse::Error(err)) => Err(AppError::Unauthorized(err.error.message)),
+            _ => Err(AppError::InternalError(anyhow!(
+                "Unexpected response shape"
+            ))),
         }
     }
 

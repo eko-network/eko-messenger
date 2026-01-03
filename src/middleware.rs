@@ -17,7 +17,9 @@ pub async fn auth_middleware(
     let token = if let Some(TypedHeader(auth_header)) = auth_header {
         auth_header.token().to_string()
     } else {
-        return Err(AppError::Unauthorized("Missing Authorization header".to_string()));
+        return Err(AppError::Unauthorized(
+            "Missing Authorization header".to_string(),
+        ));
     };
 
     let claims = state.auth.verify_access_token(&token)?;

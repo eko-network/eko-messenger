@@ -1,5 +1,7 @@
+use crate::storage::{
+    Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
+};
 use anyhow::Context;
-use crate::storage::{Storage, memory::connection::memory_storage, postgres::connection::postgres_storage};
 use sqlx::{PgPool, Postgres};
 use std::env::var;
 use tracing::info;

@@ -1,10 +1,10 @@
-pub mod traits;
-pub mod postgres;
 pub mod memory;
 pub mod models;
+pub mod postgres;
+pub mod traits;
 
-use std::sync::Arc;
 use crate::storage::traits::*;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Storage {

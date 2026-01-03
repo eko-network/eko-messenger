@@ -23,7 +23,10 @@ async fn test_firebase_login_with_email() {
         }
     };
 
-    let firebase_auth = FirebaseAuth::new_from_env_with_domain("https://localhost:3000".to_string()).await.unwrap();
+    let firebase_auth =
+        FirebaseAuth::new_from_env_with_domain("https://localhost:3000".to_string())
+            .await
+            .unwrap();
 
     let result = firebase_auth.login_with_email(email, password).await;
 
@@ -32,4 +35,3 @@ async fn test_firebase_login_with_email() {
     assert!(!uid.is_empty());
     assert_eq!(person.type_field, "Person");
 }
-

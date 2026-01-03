@@ -1,8 +1,8 @@
 use crate::{
     AppState,
     activitypub::{CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, actor_url},
-    errors::AppError,
     auth::Claims,
+    errors::AppError,
 };
 use axum::{
     Json, debug_handler,
