@@ -1,8 +1,10 @@
+pub mod capabilities;
 pub mod inbox;
 pub mod outbox;
 pub mod types;
 pub mod webfinger;
 
+pub use capabilities::capabilities_handler;
 pub use inbox::get_inbox;
 pub use outbox::post_to_outbox;
 pub use types::{
