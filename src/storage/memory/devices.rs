@@ -4,11 +4,13 @@ use std::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
+    activitypub::PreKeyBundle,
     auth::{PreKey, SignedPreKey},
     errors::AppError,
-    storage::models::{RegisterDeviceResult, RotatedRefreshToken},
-    storage::traits::DeviceStore,
-    types::PreKeyBundle,
+    storage::{
+        models::{RegisterDeviceResult, RotatedRefreshToken},
+        traits::DeviceStore,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -67,16 +69,9 @@ impl InMemoryDeviceStore {
 
 #[async_trait]
 impl DeviceStore for InMemoryDeviceStore {
-    async fn key_bundles_for_user(
-        &self,
-        uid: &str,
-    ) -> Result<Vec<PreKeyBundle>, AppError> {
+    async fn key_bundles_for_user(&self, uid: &str) -> Result<Vec<PreKeyBundle>, AppError> {
         let devices = self.devices.read().unwrap();
-        let user_devices: Vec<_> = devices
-            .values()
-            .filter(|d| d.uid == uid)
-            .cloned()
-            .collect();
+        let user_devices: Vec<_> = devices.values().filter(|d| d.uid == uid).cloned().collect();
         drop(devices);
 
         let mut bundles = Vec::new();
@@ -85,7 +80,7 @@ impl DeviceStore for InMemoryDeviceStore {
             // Find and remove a pre_key for this device
             let mut pre_keys = self.pre_keys.write().unwrap();
             let pre_key_pos = pre_keys.iter().position(|pk| pk.did == device.did);
-            
+
             if let Some(pos) = pre_key_pos {
                 let pre_key = pre_keys.remove(pos);
                 drop(pre_keys);
@@ -173,10 +168,7 @@ impl DeviceStore for InMemoryDeviceStore {
         signed_pre_keys.insert(did, signed_pre_key_record);
         drop(signed_pre_keys);
 
-        Ok(RegisterDeviceResult {
-            did,
-            refresh_token,
-        })
+        Ok(RegisterDeviceResult { did, refresh_token })
     }
 
     async fn rotate_refresh_token(
@@ -215,8 +207,8 @@ impl DeviceStore for InMemoryDeviceStore {
 
         // Create new token
         let new_token = Uuid::new_v4();
-        let expires_at =
-            time::OffsetDateTime::now_utc() + time::Duration::seconds(crate::auth::REFRESH_EXPIRATION);
+        let expires_at = time::OffsetDateTime::now_utc()
+            + time::Duration::seconds(crate::auth::REFRESH_EXPIRATION);
 
         let new_token_record = RefreshToken {
             token: new_token,
@@ -237,10 +229,7 @@ impl DeviceStore for InMemoryDeviceStore {
         }))
     }
 
-    async fn logout_device(
-        &self,
-        refresh_token: &Uuid,
-    ) -> Result<(), AppError> {
+    async fn logout_device(&self, refresh_token: &Uuid) -> Result<(), AppError> {
         let refresh_tokens = self.refresh_tokens.read().unwrap();
         let token_record = refresh_tokens.get(refresh_token).cloned();
         drop(refresh_tokens);

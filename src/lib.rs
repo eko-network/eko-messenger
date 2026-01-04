@@ -1,40 +1,28 @@
 pub mod activitypub;
 pub mod auth;
+pub mod config;
+pub mod crypto;
 pub mod errors;
-pub mod firebase_auth;
-pub mod inbox;
-pub mod jwt_helper;
-pub mod key_bundle;
 pub mod middleware;
-pub mod outbox;
-pub mod types;
 pub mod storage;
+
 use crate::{
-    activitypub::Person,
-    auth::{Auth, login_handler, logout_handler, refresh_token_handler},
+    activitypub::{Person, get_inbox, post_to_outbox, webfinger_handler},
+    auth::{Auth, FirebaseAuth, login_handler, logout_handler, refresh_token_handler},
+    config::storage_config,
+    crypto::get_bundle,
     errors::AppError,
-    firebase_auth::FirebaseAuth,
-    inbox::get_inbox,
-    key_bundle::get_bundle,
     middleware::auth_middleware,
-    outbox::post_to_outbox,
-    storage::{
-        Storage,
-        postgres::connection::postgres_storage,
-        memory::connection::memory_storage,
-    },
+    storage::Storage,
 };
-use anyhow::Context;
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     response::{Html, Json},
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
-use serde::Deserialize;
-use sqlx::{PgPool, Postgres};
 use std::{
     env::{self, var},
     net::SocketAddr,
@@ -51,48 +39,12 @@ pub struct AppState {
     pub storage: Arc<Storage>,
 }
 
-#[derive(Deserialize)]
-pub struct WebFingerQuery {
-    resource: String,
-}
-
-async fn db_config() -> anyhow::Result<sqlx::Pool<Postgres>> {
-    let database_url = var("DATABASE_URL").context("DATABASE_URL not found in environment")?;
-    let pool = PgPool::connect_lazy(&database_url).context("Failed to connect to Postgres")?;
-
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .context("Failed to run migrations")?;
-    Ok(pool)
-}
-
-async fn storage_config() -> anyhow::Result<Storage> {
-    // default storage choice to postgres
-    let storage_backend = var("STORAGE_BACKEND").unwrap_or_else(|_| "postgres".to_string());
-
-    match storage_backend.to_lowercase().as_str() {
-        "memory" => {
-            info!("Using in-memory storage backend");
-            Ok(memory_storage())
-        }
-        "postgres" => {
-            info!("Using PostgreSQL storage backend");
-            let pool = db_config().await?;
-            Ok(postgres_storage(pool))
-        }
-        _ => {
-            anyhow::bail!("Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres' or 'memory'", storage_backend)
-        }
-    }
-}
-
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
-        .route("/users/{username}/outbox", post(post_to_outbox))
-        .route("/users/{username}/inbox", get(get_inbox))
-        .route("/users/{username}/keys/bundle.json", get(get_bundle))
+        .route("/users/{uid}/outbox", post(post_to_outbox))
+        .route("/users/{uid}/inbox", get(get_inbox))
+        .route("/users/{uid}/keys/bundle.json", get(get_bundle))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -101,12 +53,17 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
-        .route("/users/{username}", get(actor_handler))
+        .route("/users/{uid}", get(actor_handler))
         .merge(protected_routes)
         .layer(ip_source.into_extension())
         .with_state(app_state))
 }
-
+fn port_from_env() -> u16 {
+    var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000)
+}
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // logging
     tracing_subscriber::fmt()
@@ -114,12 +71,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
     let storage = Arc::new(storage_config().await?);
+    let port = port_from_env();
 
-    let firebase_auth = FirebaseAuth::new_from_env()?;
-    let domain = var("DOMAIN").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+    let domain = var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port));
+    let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone()).await?;
 
     let auth = Auth::new(firebase_auth, storage.clone());
-
     let app_state = AppState {
         auth: Arc::new(auth),
         domain,
@@ -128,7 +85,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = app(app_state, ip_source)?;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     info!("Server listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await?;
@@ -167,49 +124,10 @@ async fn root_handler() -> Html<&'static str> {
     ")
 }
 
-async fn webfinger_handler(
-    State(state): State<AppState>,
-    Query(query): Query<WebFingerQuery>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let resource = query.resource;
-    if !resource.starts_with("acct:") {
-        return Err(AppError::BadRequest("Invalid resource format".to_string()));
-    }
-
-    let parts: Vec<&str> = resource.trim_start_matches("acct:").split('@').collect();
-    if parts.len() != 2 {
-        return Err(AppError::BadRequest("Invalid resource format".to_string()));
-    }
-    let username = parts[0];
-    let domain = parts[1];
-
-    if domain != state.domain {
-        return Err(AppError::NotFound(
-            "User not found on this domain".to_string(),
-        ));
-    }
-
-    let actor_url = format!("http://{}/users/{}", state.domain, username);
-
-    let jrd = serde_json::json!({
-        "subject": resource,
-        "links": [
-            {
-                "rel": "self",
-                "type": "application/activity+json",
-                "href": actor_url,
-            }
-        ]
-    });
-
-    Ok(Json(jrd))
-}
-
 async fn actor_handler(
     State(state): State<AppState>,
     Path(uid): Path<String>,
 ) -> Result<Json<Person>, AppError> {
-    let actor = activitypub::create_person(&uid, &state.domain);
-
+    let actor = state.auth.provider.person_from_uid(&uid).await?;
     Ok(Json(actor))
 }

@@ -56,4 +56,3 @@ where
         AppError::InternalError(err.into())
     }
 }
-

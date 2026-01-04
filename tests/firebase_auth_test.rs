@@ -1,7 +1,4 @@
-#![cfg(feature = "integration-firebase")]
-
-use eko_messenger::auth::IdentityProvider;
-use eko_messenger::firebase_auth::FirebaseAuth;
+use eko_messenger::auth::{FirebaseAuth, IdentityProvider};
 use std::env;
 use tokio;
 
@@ -26,12 +23,15 @@ async fn test_firebase_login_with_email() {
         }
     };
 
-    let firebase_auth = FirebaseAuth::new_from_env().unwrap();
+    let firebase_auth =
+        FirebaseAuth::new_from_env_with_domain("https://localhost:3000".to_string())
+            .await
+            .unwrap();
 
     let result = firebase_auth.login_with_email(email, password).await;
 
     assert!(result.is_ok(), "Login failed: {:?}", result.err());
-    let login_info = result.unwrap();
-    assert!(!login_info.is_empty());
+    let (person, uid) = result.unwrap();
+    assert!(!uid.is_empty());
+    assert_eq!(person.type_field, "Person");
 }
-

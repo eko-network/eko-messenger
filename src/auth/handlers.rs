@@ -1,18 +1,24 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use axum::{Json, extract::State, http::StatusCode};
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
 use serde_with::serde_as;
+use tracing::info;
 use uuid::Uuid;
 
 pub const REFRESH_EXPIRATION: i64 = 60 * 60 * 24 * 31;
+pub const JWT_LIFESPAN: time::Duration = time::Duration::minutes(15);
 
 use crate::{
-    activitypub::{actor_url, create_person, Person}, errors::AppError, jwt_helper::{Claims, JwtHelper}, storage::Storage, AppState
+    AppState,
+    activitypub::{Person, actor_url},
+    auth::jwt::{Claims, JwtHelper},
+    errors::AppError,
+    storage::Storage,
 };
 use jsonwebtoken;
 
@@ -70,11 +76,18 @@ pub struct RefreshResponse {
 }
 #[async_trait]
 pub trait IdentityProvider: Send + Sync {
-    async fn login_with_email(&self, email: String, password: String) -> Result<String, AppError>;
+    /// Returns actor and uid
+    async fn login_with_email(
+        &self,
+        email: String,
+        password: String,
+    ) -> Result<(Person, String), AppError>;
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError>;
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError>;
 }
 
 pub struct Auth {
-    provider: Arc<dyn IdentityProvider>,
+    pub provider: Arc<dyn IdentityProvider>,
     storage: Arc<Storage>,
     jwt_helper: JwtHelper,
 }
@@ -96,9 +109,8 @@ impl Auth {
         user_agent: &str,
         domain: &str,
     ) -> Result<Json<LoginResponse>, AppError> {
-        let uid = self
+        let (actor, uid) = self
             .provider
-            //FIXME: pointles clone
             .login_with_email(req.email.clone(), req.password.clone())
             .await?;
         let expires_at =
@@ -122,8 +134,7 @@ impl Auth {
         let actor_id = actor_url(domain, &uid);
         let inbox_url = format!("{}/inbox", actor_id);
         let outbox_url = format!("{}/outbox", actor_id);
-        self
-            .storage
+        self.storage
             .actors
             .upsert_local_actor(&actor_id, &inbox_url, &outbox_url)
             .await?;
@@ -133,8 +144,7 @@ impl Auth {
             .create_jwt(&uid, register.did)
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let expires_at =
-            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
+        let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
 
         let response = LoginResponse {
             uid: uid.clone(),
@@ -142,7 +152,7 @@ impl Auth {
             access_token,
             refresh_token: register.refresh_token,
             expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
-            actor: create_person(&uid, domain),
+            actor,
         };
 
         Ok(Json(response))
@@ -163,10 +173,12 @@ impl Auth {
         match result {
             Some(rotated) => {
                 let access_token = self.jwt_helper.create_jwt(&rotated.uid, rotated.did)?;
+                let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
                 Ok(Json(RefreshResponse {
                     access_token,
                     refresh_token: rotated.refresh_token,
-                    expires_at: rotated.expires_at.format(&time::format_description::well_known::Rfc3339)?,
+                    expires_at: expires_at
+                        .format(&time::format_description::well_known::Rfc3339)?,
                 }))
             }
             None => Err(AppError::Unauthorized("Invalid refresh token".into())),
@@ -174,20 +186,21 @@ impl Auth {
     }
 
     pub async fn logout(&self, refresh_token: &Uuid) -> Result<(), AppError> {
-        self.storage.devices.logout_device(refresh_token).await    
+        self.storage.devices.logout_device(refresh_token).await
     }
 
     pub fn verify_access_token(&self, token: &str) -> Result<Claims, AppError> {
-        let now = time::OffsetDateTime::now_utc().unix_timestamp() as usize;
+        let data = self.jwt_helper.decrypt_jwt(token);
 
-        let data: jsonwebtoken::TokenData<Claims> = self
-            .jwt_helper
-            .decrypt_jwt(token)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        if data.claims.exp < now {
-            return Err(AppError::Unauthorized("Token has Expired".to_string()));
+        match data {
+            Ok(token_data) => Ok(token_data.claims),
+            Err(e) => match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    Err(AppError::Unauthorized("Token has expired".to_string()))
+                }
+                _ => Err(anyhow::anyhow!(e).into()),
+            },
         }
-        Ok(data.claims)
     }
 }
 
@@ -215,6 +228,7 @@ pub async fn refresh_token_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<RefreshResponse>, AppError> {
+    info!("refresh token request received");
     state
         .auth
         .refresh_token(&req.refresh_token, &ip.to_string(), &user_agent.to_string())

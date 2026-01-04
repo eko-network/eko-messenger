@@ -2,10 +2,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use crate::{
-    errors::AppError,
-    storage::traits::ActorStore,
-};
+use crate::{errors::AppError, storage::traits::ActorStore};
 
 #[derive(Clone, Debug)]
 struct Actor {
@@ -47,14 +44,8 @@ impl ActorStore for InMemoryActorStore {
         Ok(())
     }
 
-    async fn is_local_actor(
-        &self,
-        actor_id: &str,
-    ) -> Result<bool, AppError> {
+    async fn is_local_actor(&self, actor_id: &str) -> Result<bool, AppError> {
         let actors = self.actors.read().unwrap();
-        Ok(actors
-            .get(actor_id)
-            .map(|a| a.is_local)
-            .unwrap_or(false))
+        Ok(actors.get(actor_id).map(|a| a.is_local).unwrap_or(false))
     }
 }

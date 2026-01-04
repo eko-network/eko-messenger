@@ -3,7 +3,13 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    auth::{PreKey, SignedPreKey}, errors::AppError, storage::models::{RegisterDeviceResult, RotatedRefreshToken}, storage::traits::DeviceStore, types::PreKeyBundle
+    activitypub::PreKeyBundle,
+    auth::{PreKey, SignedPreKey},
+    errors::AppError,
+    storage::{
+        models::{RegisterDeviceResult, RotatedRefreshToken},
+        traits::DeviceStore,
+    },
 };
 
 pub struct PostgresDeviceStore {
@@ -18,10 +24,7 @@ impl PostgresDeviceStore {
 
 #[async_trait]
 impl DeviceStore for PostgresDeviceStore {
-    async fn key_bundles_for_user(
-        &self,
-        uid: &str,
-    ) -> Result<Vec<PreKeyBundle>, AppError> {
+    async fn key_bundles_for_user(&self, uid: &str) -> Result<Vec<PreKeyBundle>, AppError> {
         let mut tx = self.pool.begin().await?;
 
         let devices = sqlx::query!(
@@ -134,10 +137,7 @@ impl DeviceStore for PostgresDeviceStore {
         .await?;
 
         tx.commit().await?;
-        Ok(RegisterDeviceResult {
-            did,
-            refresh_token,
-        })
+        Ok(RegisterDeviceResult { did, refresh_token })
     }
 
     async fn rotate_refresh_token(
@@ -168,9 +168,7 @@ impl DeviceStore for PostgresDeviceStore {
             }
         };
 
-        if row.expires_at <= time::OffsetDateTime::now_utc()
-            || row.user_agent != user_agent
-        {
+        if row.expires_at <= time::OffsetDateTime::now_utc() || row.user_agent != user_agent {
             tx.commit().await?;
             return Ok(None);
         }
@@ -179,8 +177,8 @@ impl DeviceStore for PostgresDeviceStore {
             .execute(&mut *tx)
             .await?;
 
-        let expires_at =
-            time::OffsetDateTime::now_utc() + time::Duration::seconds(crate::auth::REFRESH_EXPIRATION);
+        let expires_at = time::OffsetDateTime::now_utc()
+            + time::Duration::seconds(crate::auth::REFRESH_EXPIRATION);
 
         let new_token = sqlx::query!(
             r#"
@@ -220,4 +218,3 @@ impl DeviceStore for PostgresDeviceStore {
         Ok(())
     }
 }
-

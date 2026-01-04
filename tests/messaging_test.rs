@@ -2,9 +2,7 @@ mod common;
 
 use base64::{Engine as _, engine::general_purpose};
 use common::spawn_app;
-use eko_messenger::activitypub::{
-    CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId,
-};
+use eko_messenger::activitypub::{CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId};
 use serde_json::Value;
 
 #[tokio::test]
@@ -12,6 +10,7 @@ async fn test_send_and_receive_message_to_self() {
     let app = spawn_app().await;
     let client = &app.client;
     let login = app.login_http("user@example.com", "password").await;
+    let did = login.did;
     let auth_token = login.access_token;
     let uid = login.uid;
     let actor_url = app.actor_url(&uid);
@@ -20,8 +19,8 @@ async fn test_send_and_receive_message_to_self() {
     let message_content = "test message to self".to_string();
 
     let encrypted_message_entry = EncryptedMessageEntry {
-        to: 0,
-        from: 0,
+        to: did,
+        from: did,
         content: message_content.as_bytes().to_vec(),
     };
 
@@ -102,7 +101,7 @@ async fn test_send_and_receive_message_to_self() {
     );
     assert_eq!(
         encrypted_note["attributedTo"],
-        format!("http://{}/users/{}", app.domain, uid),
+        format!("{}/users/{}", app.domain, uid),
         "AttributedTo mismatch"
     );
 }

@@ -3,13 +3,19 @@ use serde_json::Value;
 use serde_with::base64::Base64;
 use serde_with::serde_as;
 
+const ACTIVITY_STREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
+
+fn default_context_value() -> Value {
+    Value::String(ACTIVITY_STREAMS_CONTEXT.to_string())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WithId(pub String);
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct NoId;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EncryptedMessage<Id> {
     #[serde(rename = "@context")]
@@ -23,7 +29,7 @@ pub struct EncryptedMessage<Id> {
     pub to: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CreateActivity<Id> {
     #[serde(rename = "@context")]
     pub context: Value,
@@ -48,34 +54,67 @@ pub struct EncryptedMessageEntry {
 #[serde(rename_all = "camelCase")]
 pub struct Person {
     #[serde(rename = "@context")]
-    context: Value,
+    pub context: Value,
     #[serde(rename = "type")]
-    type_field: String,
-    id: String,
-    inbox: String,
-    outbox: String,
-    key_bundle: String,
-    preferred_username: String,
+    pub type_field: String,
+    pub id: String,
+    pub inbox: String,
+    pub outbox: String,
+    pub key_bundle: String,
+    pub preferred_username: String,
+    pub profile_picture: Option<String>,
+    pub summary: Option<String>,
+    pub name: Option<String>,
 }
 
-pub fn create_person(uid: &str, domain: &str) -> Person {
+pub fn create_person(
+    domain: &str,
+    uid: &str,
+    summary: Option<String>,
+    preferred_username: String,
+    name: Option<String>,
+    profile_picture: Option<String>,
+) -> Person {
     let id = actor_url(domain, uid);
     let inbox_url = format!("{}/inbox", id);
     let outbox_url = format!("{}/outbox", id);
     let key_bundles_url = format!("{}/keys/bundle.json", id);
 
     Person {
-        context: Value::String("https://www.w3.org/ns/activitystreams".to_string()),
+        context: default_context_value(),
         type_field: "Person".to_string(),
         id: id,
-        //FIXME
-        preferred_username: uid.to_string(),
         inbox: inbox_url,
         outbox: outbox_url,
+        //FIXME
         key_bundle: key_bundles_url,
+        summary,
+        preferred_username,
+        name,
+        profile_picture,
     }
 }
 
+#[serde_as]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreKeyBundle {
+    pub did: i32,
+    #[serde_as(as = "Base64")]
+    pub identity_key: Vec<u8>,
+    pub registration_id: i32,
+
+    pub pre_key_id: i32,
+    #[serde_as(as = "Base64")]
+    pub pre_key: Vec<u8>,
+
+    pub signed_pre_key_id: i32,
+    #[serde_as(as = "Base64")]
+    pub signed_pre_key: Vec<u8>,
+    #[serde_as(as = "Base64")]
+    pub signed_pre_key_signature: Vec<u8>,
+}
+
 pub fn actor_url(domain: &str, uid: &str) -> String {
-    return format!("http://{}/users/{}", domain, uid);
+    return format!("{}/users/{}", domain, uid);
 }

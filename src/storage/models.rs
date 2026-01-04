@@ -10,6 +10,12 @@ pub struct StoredActivity {
     // TODO I think we need more information (like device_id)
     pub created_at: OffsetDateTime,
 }
+#[derive(Debug, Clone)]
+pub struct StoredInboxEntry {
+    pub actor_id: String,
+    pub from_did: i32,
+    pub content: Vec<u8>,
+}
 
 #[derive(Debug, Clone)]
 pub struct StoredOutboxActivity {

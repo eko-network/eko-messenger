@@ -1,8 +1,8 @@
-use async_trait::async_trait;
-use sqlx::PgPool;
+use crate::errors::AppError;
 use crate::storage::models::StoredOutboxActivity;
 use crate::storage::traits::OutboxStore;
-use crate::errors::AppError;
+use async_trait::async_trait;
+use sqlx::PgPool;
 
 pub struct PostgresOutboxStore {
     pool: PgPool,
@@ -16,10 +16,7 @@ impl PostgresOutboxStore {
 
 #[async_trait]
 impl OutboxStore for PostgresOutboxStore {
-    async fn insert_activity(
-        &self,
-        activity: &StoredOutboxActivity,
-    ) -> Result<(), AppError> {
+    async fn insert_activity(&self, activity: &StoredOutboxActivity) -> Result<(), AppError> {
         sqlx::query!(
             r#"
             INSERT INTO activities (id, actor_id, activity_type, activity_json)
@@ -36,4 +33,3 @@ impl OutboxStore for PostgresOutboxStore {
         Ok(())
     }
 }
-
