@@ -3,6 +3,7 @@ use axum::{
     extract::{Query, State},
 };
 use serde::Deserialize;
+use tracing::warn;
 
 use crate::{AppState, errors::AppError};
 
@@ -27,15 +28,21 @@ pub async fn webfinger_handler(
     let username = parts[0];
     let domain = parts[1];
 
-    if domain != state.domain {
-        return Err(AppError::NotFound(
-            "User not found on this domain".to_string(),
-        ));
+    let trimmed_domain = state
+        .domain
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+
+    if domain != trimmed_domain {
+        return Err(AppError::NotFound(format!(
+            "User not found on this domain. Requested {}, expected {}",
+            domain, trimmed_domain
+        )));
     }
 
     let uid = state.auth.provider.uid_from_username(username).await?;
 
-    let actor_url = format!("http://{}/users/{}", state.domain, uid);
+    let actor_url = format!("{}/users/{}", state.domain, uid);
 
     let jrd = serde_json::json!({
         "subject": resource,
