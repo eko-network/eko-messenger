@@ -1,11 +1,9 @@
+use crate::{AppState, errors::AppError};
 use axum::{
     Json,
     extract::{Query, State},
 };
 use serde::Deserialize;
-use tracing::warn;
-
-use crate::{AppState, errors::AppError};
 
 #[derive(Deserialize)]
 pub struct WebFingerQuery {

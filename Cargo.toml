@@ -30,3 +30,5 @@ dashmap = "6.1.0"
 [dev-dependencies]
 async-trait = "0.1.89"
 base64 = "0.22.1"
+tokio-tungstenite = "0.24.0"
+futures-util = "0.3.31"

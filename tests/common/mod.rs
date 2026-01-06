@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use dashmap::DashMap;
 use eko_messenger::{
     AppState, app,
     auth::{
@@ -193,6 +194,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         auth: Arc::new(auth_service),
         domain: domain.clone(),
         storage: storage.clone(),
+        sockets: Arc::new(DashMap::new()),
     };
 
     let app_router = app(app_state, "ConnectInfo".to_string())
