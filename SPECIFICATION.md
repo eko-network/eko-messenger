@@ -1,6 +1,6 @@
 # Eko-messenger
 
-Version: 0.0.1
+Version: 0.0.2
 
 ## Overview
 
@@ -73,8 +73,8 @@ Example: User with keyPackages collection
 	"type": "Collection",  
 	"id": "https://eko.network/user/user1/keyPackages",  
 	"items": [  
-  	"https://eko.network/user/user1/keyPackage/A",  
-  	"https://eko.network/user/user1/keyPackage/B"  
+  		"https://eko.network/user/user1/keyPackage/A",  
+  		"https://eko.network/user/user1/keyPackage/B"  
 	]  
   }  
 }  
@@ -117,7 +117,6 @@ Example: User sending a `SignalEnvelope`
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Create",  
   "actor": "https://eko.network/user/user1",  
-  "id": "https://eko.network/user/signal/<envelope-id>" // this link should be **empty**  
   "to": ["https://other.network/user/user2"],  
   "object": {  
 	"type": ["Object", "SignalEnvelope"],  
@@ -144,7 +143,8 @@ All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryp
 ### Supported Objects
 
 * Note  
-* Article  
+* EmojiReact  
+* Typing # special transient activity?  
 * Image  
 * Audio  
 * Video
@@ -154,21 +154,40 @@ All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryp
 The following restrictions apply to content objects embedded in encrypted messages:
 
 * `id`  
-  * MUST be a unique, non-resolvable URI.  
-  * HTTPS URLs MUST NOT be used.  
-  * Client-generated URNs are RECOMMENDED.  
-* `mediaType`  
-  * For Note and Article, this SHOULD be unset or use the default text/html.  
-  * For Image, Audio, or Video (TODO: do we encrypt the same way, and send as activityPub does?)  
-* `encoding`  
-  * New property, default value is `base64`.  
+  * MUST be 128-bit uuid so it’s a unique, non-resolvable URI.  
 * `content`  
-  * For Note and Article, this MUST contain the HTML content of the object.  
-  * TODO: images and others?  
+  * For Note, this MUST contain the HTML content of the object.  
 * `summary`  
   * Optional human-readable summary or description of the content.  
 * `attachment`  
-  * TODO  
+  * List of attachments in the message. Images and files SHOULD be encrypted with AES-256-GCM using a new key for each attachment. The attachment MUST include a digest field with the SHA-256 hash of the encrypted file NOT the original file.
+
+Example: Sending Attachments  
+```json  
+[  
+  {  
+    "contentType": "image/jpeg",  
+    "encryption": "AES-256-GCM",  
+    "key": "b64_encoded_key",  
+    "url": "https://cdn.example.org/attachments/abc-123-xyz",  
+    "size": 1048576,  
+    "name": "image.jpg",  
+    "blurHash": "LAAwF",  
+    "digest": "sha256_hash"  
+  },  
+  {  
+    "contentType": "application/gzip",  
+    "encryption": "AES-256-GCM",  
+    "key": "b64_encoded_key",  
+    "url": "https://cdn.example.org/attachments/def-456-uvw",  
+    "size": 34023,  
+    "name": "file.tar.gz",  
+    "digest": "sha256_hash"  
+  }
+
+]  
+```
+
 * `inReplyTo`  
   * References the id of a content object previously delivered to the same conversation.
 
@@ -177,10 +196,10 @@ Example: Create activity
 {  
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Create",  
-  "id": "urn:eko:uuid:<uuid>",  
+  "id": "urn:uuid:<uuid>",  
   "object": {  
 	"type": "Note",  
-	"id": "urn:eko:uuid:<uuid>",  
+	"id": "urn:uuid:<uuid>",  
 	"content": "Hello, World!"  
   }  
 }  
@@ -190,10 +209,10 @@ Example: Update activity
 {  
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Update",  
-  "id": "urn:eko:uuid:<uid>",  
+  "id": "urn:uuid:<uid>",  
   "object": {  
 	"type": "Note",  
-	"id": "urn:eko:uuid:<uid>",  
+	"id": "urn:uuid:<uid>",  
 	"content": "Hello, World Universe!"  
   }  
 }  
@@ -203,8 +222,8 @@ Example: Delete activity
 {  
   "@context": "https://www.w3.org/ns/activitystreams",  
   "type": "Delete",  
-  "id": "urn:eko:uuid:<uid>",  
-  "object": "urn:eko:uuid:<uid>"  
+  "id": "urn:uuid:<uid>",  
+  "object": "urn:uuid:<uid>"  
 }  
 ```
 
@@ -245,34 +264,17 @@ When the server receives a `SignalEnvelope` message in the User’s inbox:
 1. Server delivers the envelope to the receiver’s inbox.  
    1. Synchronously if the receiver is on the User’s homeserver.  
    1. Asynchronously if on an external server.  
-      1. Note: the external server may reject the `SignalEnvelope` if not all devices have an encrypted message.  
-1. Server MUST notify the Client if the server fails to deliver the messages.
+      1. Note: the external server may reject the `SignalEnvelope` if not all devices have an encrypted message.
 
 ### Receive Message
 
-When a server receives a `SignalEnvelope` in the User’s inbox, it MUST:
+When a server receives a `SignalEnvelope`, it SHOULD:
 
+1. ACK the delivery.  
 1. Verify the envelope contains exactly one encrypted Message for each currently registered Device of the recipient User.  
-1. If verification succeeds, the message is put in the User’s inbox, and ACKs the delivery, and a Confirm is (optionally) sent to the client (if the server implementation wants to distinguish a receive to the home server vs external server).  
-1. If verification fails, delivery is rejected.  
-   1. If Partial Delivery is implemented, the server will put the Messages in the User’s inbox and put a PartialDelivery activity in the Sender’s inbox. MUST wait for the  `SignalEnvelope` with remaining messages.  
-   1. Else, a Reject activity is put in the Sender’s inbox.
-
-Example: Partial Delivery  
-```json  
-{  
-  "@context": [  
-	"https://www.w3.org/ns/activitystreams",  
-	"https://eko.network/ns"  
-  ],  
-  "type": "eko:PartialDelivery",  
-  "actor": "https://other.network",  
-  "to": ["https://eko.network/user/user1"],  
-  "object": "https://eko.network/user/signal/<envelope-id>",  
-  "eko:deviceSetOutOfDate": true,  
-  "summary": "SignalEnvelope delivered, but one or more recipient devices were missing encrypted messages."  
-}  
-```
+1. If verification succeeds, the message is put in the receiving User’s inbox.  
+   1. The server MAY send a Confirm activity to the sender’s inbox to confirm delivery.  
+1. If verification fails, a Reject activity MUST be sent to the Sender’s inbox.
 
 Example: Reject  
 ```json  
@@ -285,8 +287,6 @@ Example: Reject
   "actor": "https://other.network",  
   "to": ["https://eko.network/user/user1"],  
   "object": "https://eko.network/user/signal/<envelope-id>",  
-  "eko:deviceSetOutOfDate": true,  
-  "eko:partialDelivery": true,
   "summary": "SignalEnvelope rejected: encrypted messages missing for one or more recipient devices."  
 }  
 ```
@@ -294,6 +294,10 @@ Example: Reject
 ## E2E Encryption
 
 - TODO: Signal encryption mechanism described here.
+
+## Key Management
+
+- TODO
 
 ## Trust Model and Limitations
 
@@ -317,4 +321,4 @@ Signal currently has no message ordering guarantees, and is a current [issue](ht
 
 ### Push Notifications
 
-* Will be implemented, but is handled out-of-band and are not part of the protocol.
+* Will be implemented, but is handled out-of-band and is not part of the protocol.
