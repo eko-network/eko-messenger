@@ -131,8 +131,8 @@ pub fn actor_uid(url: &str) -> anyhow::Result<String> {
 }
 
 pub fn generate_create(
-    from_actor: String,
     to_actor: String,
+    from_actor: String,
     to_did: i32,
     from_did: i32,
     content: Vec<u8>,

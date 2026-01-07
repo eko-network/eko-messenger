@@ -20,7 +20,7 @@ use axum::{
 use serde_json::json;
 use std::sync::Arc;
 use time::OffsetDateTime;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 #[debug_handler]
@@ -75,6 +75,10 @@ pub async fn post_to_outbox(
                 .sockets
                 .get(&(actor_uid(recipient_actor_id)?, entry.to))
             {
+                debug!(
+                    "{} - {} online, trying to send via socket",
+                    recipient_actor_id, entry.to
+                );
                 // Client is online - push directly via WebSocket
                 let message = generate_create(
                     recipient_actor_id.clone(),
