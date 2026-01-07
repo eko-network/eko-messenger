@@ -1,6 +1,9 @@
 use crate::{
     AppState,
-    activitypub::{CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, actor_url},
+    activitypub::{
+        CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, actor_url,
+        types::generate_create,
+    },
     auth::Claims,
     errors::AppError,
 };
@@ -38,23 +41,14 @@ pub async fn get_inbox(
     Ok(Json(
         items
             .into_iter()
-            .map(|i| CreateActivity {
-                context: Value::String("placeholder".to_string()),
-                type_field: "Create".to_string(),
-                id: NoId,
-                actor: i.actor_id.clone(),
-                object: EncryptedMessage {
-                    context: Value::String("placeholder".to_string()),
-                    attributed_to: i.actor_id,
-                    content: vec![EncryptedMessageEntry {
-                        to: did,
-                        from: i.from_did,
-                        content: i.content,
-                    }],
-                    id: NoId,
-                    to: vec![actor_id.clone()],
-                    type_field: "Note".to_string(),
-                },
+            .map(|i| {
+                generate_create(
+                    i.actor_id.clone(),
+                    actor_id.clone(),
+                    did,
+                    i.from_did,
+                    i.content,
+                )
             })
             .collect(),
     ))

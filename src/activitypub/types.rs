@@ -3,6 +3,8 @@ use serde_json::Value;
 use serde_with::base64::Base64;
 use serde_with::serde_as;
 
+use crate::errors::AppError;
+
 const ACTIVITY_STREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
 fn default_context_value() -> Value {
@@ -117,4 +119,40 @@ pub struct PreKeyBundle {
 
 pub fn actor_url(domain: &str, uid: &str) -> String {
     return format!("{}/users/{}", domain, uid);
+}
+
+pub fn actor_uid(url: &str) -> anyhow::Result<String> {
+    Ok(url
+        .split("/")
+        .filter(|v| !v.is_empty())
+        .last()
+        .ok_or(anyhow::anyhow!("unknown url format"))?
+        .to_string())
+}
+
+pub fn generate_create(
+    to_actor: String,
+    from_actor: String,
+    to_did: i32,
+    from_did: i32,
+    content: Vec<u8>,
+) -> CreateActivity<NoId> {
+    CreateActivity {
+        context: default_context_value(),
+        type_field: "Create".to_string(),
+        id: NoId,
+        actor: from_actor.clone(),
+        object: EncryptedMessage {
+            context: default_context_value(),
+            attributed_to: from_actor,
+            content: vec![EncryptedMessageEntry {
+                to: to_did,
+                from: from_did,
+                content: content,
+            }],
+            id: NoId,
+            to: vec![to_actor],
+            type_field: "Note".to_string(),
+        },
+    }
 }

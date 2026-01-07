@@ -1,20 +1,26 @@
 use crate::{
     AppState,
-    activitypub::{CreateActivity, EncryptedMessage, NoId, WithId},
+    activitypub::{
+        CreateActivity, EncryptedMessage, NoId, WithId,
+        types::{actor_uid, generate_create},
+    },
     auth::Claims,
     errors::AppError,
     storage::models::{StoredInboxEntry, StoredOutboxActivity},
 };
 use axum::{
     Json, debug_handler,
-    extract::{Extension, State},
+    extract::{
+        Extension, State,
+        ws::{Message, Utf8Bytes},
+    },
     http::StatusCode,
     response::IntoResponse,
 };
 use serde_json::json;
 use std::sync::Arc;
 use time::OffsetDateTime;
-use tracing::info;
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 #[debug_handler]
@@ -63,7 +69,37 @@ pub async fn post_to_outbox(
         // {
         for entry in &payload.object.content {
             info!("SEND for {}, {}", recipient_actor_id, entry.to);
-            // probably bad clones?
+
+            // Check if the recipient is online via WebSocket
+            if let Some(sender) = state
+                .sockets
+                .get(&(actor_uid(recipient_actor_id)?, entry.to))
+            {
+                debug!(
+                    "{} - {} online, trying to send via socket",
+                    recipient_actor_id, entry.to
+                );
+                // Client is online - push directly via WebSocket
+                let message = generate_create(
+                    recipient_actor_id.clone(),
+                    payload.actor.clone(),
+                    entry.to,
+                    entry.from,
+                    entry.content.clone(),
+                );
+
+                let message_json = serde_json::to_string(&message)?;
+
+                if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
+                    warn!(
+                        "Failed to send to online client {}, falling back to inbox: {}",
+                        recipient_actor_id, e
+                    );
+                    // Fall through to insert in inbox
+                }
+            }
+
+            // Client is offline or WebSocket send failed, insert into inbox
             state
                 .storage
                 .inbox
