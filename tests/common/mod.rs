@@ -6,6 +6,7 @@ use eko_messenger::{
         Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey,
     },
     config::{db_config, storage_config},
+    notifications::NotificationService,
     storage::{Storage, postgres::connection::postgres_storage},
 };
 use reqwest::Client;
@@ -171,23 +172,30 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         StorageBackend::Postgres => Arc::new(postgres_storage(postgres_pool().await)),
     };
 
+    let client = reqwest::Client::new();
+
     let auth_service = match options.identity {
         IdentityBackend::Test => {
             Auth::new(TestIdentityProvider::new(domain.clone()), storage.clone())
         }
         IdentityBackend::Firebase => {
-            let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone())
+            let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone())
                 .await
                 .expect("Failed to create FirebaseAuth from env");
             Auth::new(firebase_auth, storage.clone())
         }
     };
 
+    let notification_service = NotificationService::new(storage.clone())
+        .await
+        .expect("Failed to create notification_service");
+
     let app_state = AppState {
         auth: Arc::new(auth_service),
-        domain: domain.clone(),
+        domain: Arc::new(domain.clone()),
         storage: storage.clone(),
         sockets: Arc::new(DashMap::new()),
+        notification_service: Arc::new(notification_service),
     };
 
     let app_router = app(app_state, "ConnectInfo".to_string())

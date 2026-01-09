@@ -67,6 +67,7 @@ pub async fn post_to_outbox(
         //     .is_local_actor(recipient_actor_id)
         //     .await?
         // {
+        let mut did_to_notif: Vec<i32> = Vec::with_capacity(payload.object.content.len());
         for entry in &payload.object.content {
             info!("SEND for {}, {}", recipient_actor_id, entry.to);
 
@@ -115,7 +116,10 @@ pub async fn post_to_outbox(
                     },
                 )
                 .await?;
+            // Only notify an offline device
+            did_to_notif.push(entry.to);
         }
+        state.notification_service.notify(&did_to_notif).await?
         // } else {
         //     info!("Forign id {}", recipient_actor_id);
         //     // Save activity

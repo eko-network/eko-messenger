@@ -75,3 +75,16 @@ pub trait ActorStore: Send + Sync {
     /// Returns true if the actor exists and is local
     async fn is_local_actor(&self, actor_id: &str) -> Result<bool, AppError>;
 }
+
+#[async_trait]
+pub trait NotificationStore: Send + Sync {
+    async fn upsert_endpoint(
+        &self,
+        did: i32,
+        endpoint: &web_push::SubscriptionInfo,
+    ) -> Result<(), AppError>;
+    async fn retrive_endpoints(
+        &self,
+        dids: &[i32],
+    ) -> Result<Vec<web_push::SubscriptionInfo>, AppError>;
+}
