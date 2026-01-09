@@ -1,6 +1,4 @@
-use crate::storage::{
-    Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
-};
+use crate::storage::{Storage, postgres::connection::postgres_storage};
 use anyhow::Context;
 use sqlx::{PgPool, Postgres};
 use std::env::var;
@@ -22,10 +20,6 @@ pub async fn storage_config() -> anyhow::Result<Storage> {
     let storage_backend = var("STORAGE_BACKEND").unwrap_or_else(|_| "postgres".to_string());
 
     match storage_backend.to_lowercase().as_str() {
-        "memory" => {
-            info!("Using in-memory storage backend");
-            Ok(memory_storage())
-        }
         "postgres" => {
             info!("Using PostgreSQL storage backend");
             let pool = db_config().await?;
@@ -33,7 +27,7 @@ pub async fn storage_config() -> anyhow::Result<Storage> {
         }
         _ => {
             anyhow::bail!(
-                "Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres' or 'memory'",
+                "Invalid STORAGE_BACKEND: '{}'. Valid options are 'postgres'",
                 storage_backend
             )
         }

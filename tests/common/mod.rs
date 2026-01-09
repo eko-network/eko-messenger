@@ -6,9 +6,7 @@ use eko_messenger::{
         Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey,
     },
     config::{db_config, storage_config},
-    storage::{
-        Storage, memory::connection::memory_storage, postgres::connection::postgres_storage,
-    },
+    storage::{Storage, postgres::connection::postgres_storage},
 };
 use reqwest::Client;
 use sqlx::PgPool;
@@ -26,7 +24,6 @@ pub struct TestApp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StorageBackend {
-    Memory,
     Postgres,
 }
 
@@ -53,14 +50,11 @@ impl Default for SpawnOptions {
 fn selected_storage_backend() -> StorageBackend {
     let backend = env::var("TEST_STORAGE_BACKEND")
         .or_else(|_| env::var("STORAGE_BACKEND"))
-        .unwrap_or_else(|_| "memory".to_string());
+        .unwrap_or_else(|_| "postgres".to_string());
 
     match backend.to_lowercase().as_str() {
-        "memory" => StorageBackend::Memory,
         "postgres" => StorageBackend::Postgres,
-        other => panic!(
-            "Invalid storage backend '{other}'. Use 'memory' or 'postgres' (via TEST_STORAGE_BACKEND or STORAGE_BACKEND)."
-        ),
+        other => panic!("Invalid storage backend '{other}'."),
     }
 }
 
@@ -174,7 +168,6 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
     let domain = format!("http://127.0.0.1:{}", port);
 
     let storage = match options.storage {
-        StorageBackend::Memory => Arc::new(memory_storage()),
         StorageBackend::Postgres => Arc::new(postgres_storage(postgres_pool().await)),
     };
 

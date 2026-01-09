@@ -29,7 +29,7 @@ cargo run
 ```
 
 ## Testing
-By default, tests run with an in-memory storage backend and a test identity provider (so no Firebase is required):
+By default, tests run with postgres and a test identity provider (so no Firebase is required):
 ```
 cargo test
 ```
