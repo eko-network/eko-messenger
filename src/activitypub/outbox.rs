@@ -95,7 +95,9 @@ pub async fn post_to_outbox(
                         "Failed to send to online client {}, falling back to inbox: {}",
                         recipient_actor_id, e
                     );
-                    // Fall through to insert in inbox
+                // Fall through to insert in inbox
+                } else {
+                    continue;
                 }
             }
 

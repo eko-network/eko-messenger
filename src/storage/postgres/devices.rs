@@ -38,7 +38,16 @@ impl DeviceStore for PostgresDeviceStore {
 
         for device in devices {
             let pre_key = sqlx::query!(
-                "DELETE FROM pre_keys WHERE did = $1 RETURNING key_id, key",
+                r#"
+                DELETE FROM pre_keys
+                WHERE ctid = (
+                    SELECT ctid
+                    FROM pre_keys
+                    WHERE did = $1
+                    LIMIT 1
+                )
+                RETURNING key_id, key
+                "#,
                 device.did
             )
             .fetch_optional(&mut *tx)

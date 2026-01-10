@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM pre_keys WHERE did = $1 RETURNING key_id, key",
+  "query": "\n                DELETE FROM pre_keys\n                WHERE ctid = (\n                    SELECT ctid\n                    FROM pre_keys\n                    WHERE did = $1\n                    LIMIT 1\n                )\n                RETURNING key_id, key\n                ",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "614866a5b20c30e7fdd28645f982da82764b9aaeed7135b562150015f508bd90"
+  "hash": "4e53983ccc67c0c4c59d691eb2deb22d7dcc8ba042d6413e26d72d1fc3c02a1a"
 }
