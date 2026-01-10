@@ -8,11 +8,13 @@ use tokio_tungstenite::{
     connect_async,
     tungstenite::{client::IntoClientRequest, http::HeaderValue, protocol::Message},
 };
+use tracing::info;
 
 #[tokio::test]
 async fn test_websocket_connection_requires_authentication() {
     let app = spawn_app().await;
 
+    info!("This Test Should Error");
     // Try connecting without authentication token
     let ws_url = format!("{}/ws", app.address.replace("http://", "ws://"));
     let result = timeout(Duration::from_secs(2), connect_async(&ws_url)).await;
@@ -85,6 +87,11 @@ async fn test_websocket_stays_connected() {
     let result = timeout(Duration::from_millis(500), ws_stream.next()).await;
 
     // Should timeout (no messages sent), meaning connection is stable
+    assert!(
+        result.is_err(),
+        "WebSocket should stay connected without closing"
+    );
+
     assert!(
         result.is_err(),
         "WebSocket should stay connected without closing"

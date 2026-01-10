@@ -3,7 +3,7 @@ use gcp_auth::{Token, TokenProvider};
 use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::env::var_os;
+use std::env::{var, var_os};
 use std::sync::Arc;
 use tokio::fs;
 
@@ -59,11 +59,9 @@ async fn get_token(provider: &Arc<dyn TokenProvider>) -> Result<Arc<Token>, gcp_
 }
 
 impl FirebaseAuth {
-    pub async fn new_from_env_with_domain(domain: String) -> Result<Self> {
-        let service_account_path = var_os("GOOGLE_APPLICATION_CREDENTIALS")
-            .expect("GOOGLE_APPLICATION_CREDENTIALS not found in enviroment")
-            .into_string()
-            .map_err(|_| anyhow!("Failed to convert from OsString to String"))?;
+    pub async fn new_from_env(domain: String, client: reqwest::Client) -> Result<Self> {
+        let service_account_path = var("GOOGLE_APPLICATION_CREDENTIALS")
+            .expect("GOOGLE_APPLICATION_CREDENTIALS should be set in enviroment");
 
         let service_account: Value =
             serde_json::from_str(&fs::read_to_string(service_account_path).await?)?;
@@ -77,7 +75,7 @@ impl FirebaseAuth {
         Ok(Self {
             project_id,
             domain,
-            client: reqwest::Client::new(),
+            client,
             token_provider: provider,
         })
     }

@@ -1,0 +1,6 @@
+CREATE TABLE notifications (
+	did INTEGER PRIMARY KEY REFERENCES devices(did) ON DELETE CASCADE,
+	endpoint TEXT NOT NULL,
+	p256dh TEXT NOT NULL,
+	auth TEXT NOT NULL
+);

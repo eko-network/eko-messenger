@@ -22,6 +22,7 @@ impl ActorStore for PostgresActorStore {
         outbox_url: &str,
     ) -> Result<(), AppError> {
         sqlx::query!(
+            //FIXME check this? why no on conflict?
             r#"
             INSERT INTO actors (id, is_local, inbox_url, outbox_url)
             VALUES ($1, true, $2, $3)

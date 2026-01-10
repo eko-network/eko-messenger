@@ -8,7 +8,7 @@ use std::env;
 use std::sync::Arc;
 
 async fn get_auth_service(storage: Arc<Storage>, domain: &str) -> Auth {
-    let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.to_string())
+    let firebase_auth = FirebaseAuth::new_from_env(domain.to_string(), reqwest::Client::new())
         .await
         .unwrap();
     Auth::new(firebase_auth, storage)

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Storage {
+    pub notifications: Arc<dyn NotificationStore>,
     pub inbox: Arc<dyn InboxStore>,
     pub outbox: Arc<dyn OutboxStore>,
     pub devices: Arc<dyn DeviceStore>,

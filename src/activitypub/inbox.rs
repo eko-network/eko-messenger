@@ -39,8 +39,8 @@ pub async fn get_inbox(
             .into_iter()
             .map(|i| {
                 generate_create(
-                    i.actor_id.clone(),
                     actor_id.clone(),
+                    i.actor_id.clone(),
                     did,
                     i.from_did,
                     i.content,

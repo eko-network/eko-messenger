@@ -24,7 +24,7 @@ async fn test_firebase_login_with_email() {
     };
 
     let firebase_auth =
-        FirebaseAuth::new_from_env_with_domain("https://localhost:3000".to_string())
+        FirebaseAuth::new_from_env("https://localhost:3000".to_string(), reqwest::Client::new())
             .await
             .unwrap();
 
