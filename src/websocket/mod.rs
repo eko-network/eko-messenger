@@ -1,16 +1,21 @@
-use crate::{AppState, auth::Claims, errors::AppError};
+use crate::{
+    AppState,
+    activitypub::types::{actor_url, generate_create},
+    auth::Claims,
+    errors::AppError,
+};
 use axum::{
     Extension,
     extract::{
         State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
+        ws::{Message, Utf8Bytes, WebSocket},
     },
     response::IntoResponse,
 };
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
 pub type WebSockets = Arc<DashMap<(String, i32), WsSender>>;
@@ -30,7 +35,49 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
         "Client {} - {} connected via WebSocket",
         claims.sub, claims.did
     );
-    state.sockets.insert((claims.sub.clone(), claims.did), tx);
+    state
+        .sockets
+        .insert((claims.sub.clone(), claims.did), tx.clone());
+
+    // Send messages from inbox to client
+    let actor_id = actor_url(&state.domain, &claims.sub);
+    match state
+        .storage
+        .inbox
+        .inbox_activities(&actor_id, claims.did)
+        .await
+    {
+        Ok(inbox_items) => {
+            for item in inbox_items {
+                let message = generate_create(
+                    actor_id.clone(),
+                    item.actor_id,
+                    claims.did,
+                    item.from_did,
+                    item.content,
+                );
+
+                let message_json = serde_json::to_string(&message).unwrap();
+
+                if tx
+                    .send(Message::Text(Utf8Bytes::from(message_json)))
+                    .is_err()
+                {
+                    warn!(
+                        "Failed to send offline message to {} - {}",
+                        claims.sub, claims.did
+                    );
+                    break;
+                }
+            }
+        }
+        Err(e) => {
+            warn!(
+                "Failed to retrieve inbox for {} - {}: {:?}",
+                claims.sub, claims.did, e
+            );
+        }
+    }
 
     loop {
         tokio::select! {

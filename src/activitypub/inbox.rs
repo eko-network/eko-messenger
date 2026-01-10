@@ -1,9 +1,6 @@
 use crate::{
     AppState,
-    activitypub::{
-        CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, actor_url,
-        types::generate_create,
-    },
+    activitypub::{CreateActivity, NoId, actor_url, types::generate_create},
     auth::Claims,
     errors::AppError,
 };
@@ -11,7 +8,6 @@ use axum::{
     Json, debug_handler,
     extract::{Extension, State},
 };
-use serde_json::Value;
 use std::sync::Arc;
 use tracing::info;
 
