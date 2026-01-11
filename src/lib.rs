@@ -4,16 +4,22 @@ pub mod config;
 pub mod crypto;
 pub mod errors;
 pub mod middleware;
+pub mod notifications;
 pub mod storage;
 pub mod websocket;
 
 use crate::{
-    activitypub::{Person, capabilities_handler, get_inbox, post_to_outbox, webfinger_handler},
+    activitypub::{
+        Person,
+        capabilities::{NOTIF_URL, SOCKET_URL},
+        capabilities_handler, get_inbox, post_to_outbox, webfinger_handler,
+    },
     auth::{Auth, FirebaseAuth, login_handler, logout_handler, refresh_token_handler},
     config::storage_config,
     crypto::get_bundle,
     errors::AppError,
     middleware::auth_middleware,
+    notifications::{NotificationService, register_handler},
     storage::Storage,
     websocket::{WebSockets, ws_handler},
 };
@@ -38,18 +44,20 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<Auth>,
-    pub domain: String,
+    pub domain: Arc<String>,
     pub storage: Arc<Storage>,
     pub sockets: WebSockets,
+    pub notification_service: Arc<NotificationService>,
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
         .route("/auth/v1/logout", post(logout_handler))
+        .route(&format!("{}/register", NOTIF_URL), post(register_handler))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
         .route("/users/{uid}/keys/bundle.json", get(get_bundle))
-        .route("/ws", get(ws_handler))
+        .route(SOCKET_URL, get(ws_handler))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
@@ -80,15 +88,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let port = port_from_env();
 
     let domain = var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port));
-    let firebase_auth = FirebaseAuth::new_from_env_with_domain(domain.clone()).await?;
+    let client = reqwest::Client::new();
+    let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone()).await?;
+    let notification_service = NotificationService::new(storage.clone()).await?;
 
-    let auth = Auth::new(firebase_auth, storage.clone());
-    let online_clients = Arc::new(DashMap::new());
     let app_state = AppState {
-        auth: Arc::new(auth),
-        domain,
+        auth: Arc::new(Auth::new(firebase_auth, storage.clone())),
+        sockets: Arc::new(DashMap::new()),
+        notification_service: Arc::new(notification_service),
+        domain: Arc::new(domain),
         storage,
-        sockets: online_clients,
     };
 
     let app = app(app_state, ip_source)?;

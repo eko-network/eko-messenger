@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO notifications (did, endpoint, p256dh, auth)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (did) \n            DO UPDATE SET\n                endpoint = EXCLUDED.endpoint, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3a11ea76eb2b8595126acddd7c348fb7f264ffdbb6a4cf2143cf1061da67708b"
+}
