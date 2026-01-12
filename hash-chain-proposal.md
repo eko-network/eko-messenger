@@ -41,7 +41,7 @@ It is possible a user will lose access to all valid devices. Their server should
 For the first enrolled device, or after a reset, there is no protection against a malicious server. The users clients should notify them of changed identity and the users must verify a hash of all participants public keys out-out-of-band.
 
 ## Alternatives
-### 1. Merkel Log with Sparse Merkel Tree
+### 1. Merkle Log with Sparse Merkle Tree
 
 Similar to hash chain, more complex data structure.
 
@@ -51,8 +51,8 @@ Similar to hash chain, more complex data structure.
 
 #### Cons:
 * Requires two complex data structures
-* Verification requires a Merkel proof for every device in chain, may outweigh reply cost.
-* Sparse Merkel tree requires place for every possible hash, requiring a hard cap on registered devices.
+* Verification requires a Merkle proof for every device in chain, may outweigh reply cost.
+* Sparse Merkle tree requires place for every possible hash, requiring a hard cap on registered devices.
 
 ### 2. Primary Device
 
