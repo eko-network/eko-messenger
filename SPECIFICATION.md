@@ -49,11 +49,45 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 
 ### Devices
 
-* Each User may have one or more Devices. Devices are represented indirectly through published `KeyPackages` in the User.  
-* Each Actor exposes a `keyPackage`s collection containing references to `KeyPackage` objects.  
+* Each User may have one or more Devices. Devices are represented as a hash chain in the User.  
+* Each Actor exposes a `Devices` collection containing references to `AddDevice` and `RevokeDevice` objects. Each `AddDevice` object should point to a `KeyPackage`. 
 * Device Lifecycle  
-  * Add device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) for a `KeyPackage` object, then [Add](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-add)s it the url to the `keyPackages` object.  
-  * Remove device: the client issues a [Remove](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-remove) activity for the `KeyPackage`.
+  * Add device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) activity addressed to the `Devices` collection for a `AddDevice` object.  
+  * Remove device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) activity addressed to the `Devices` collection for a `Revoke` object.
+
+#### AddDevice
+```json
+{
+  "@context": [  
+	"https://www.w3.org/ns/activitystreams",  
+	"https://eko.network/ns"  
+  ],  
+  "type": "AddDevice",  
+  "id": "https://eko.network/user/devices/did",
+  "prev": "<hash of previous node or null if first node>",
+  "eko:keyPackage": "https://eko.network/user/user1/keyPackage",  
+  "publicKey": "<device publicKey>",
+  "signatures": [
+    "<signerDid>":"<singature on all other fields>"
+  ]
+}
+```
+#### RevokeDevice
+```json
+{
+  "@context": [  
+	"https://www.w3.org/ns/activitystreams",  
+	"https://eko.network/ns"  
+  ],  
+  "type": "RevokeDevice",  
+  "id": "https://eko.network/user/devices/did",
+  "prev": "<hash of previous node>",
+  "signatures": [
+    "<signerDid>":"<singature on all other fields>"
+  ]
+}
+```
+To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove the signatures field and format the remaining node in compliance with RFC 8785, signing with their identityKey,
 
 #### KeyPackages
 
