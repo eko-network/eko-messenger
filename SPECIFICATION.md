@@ -93,44 +93,44 @@ To compute the prev hash, clients and server MUST format the node in accordance 
 
 Example: User with keyPackages collection  
 ```json  
-{  
-  "@context": [  
-	"https://www.w3.org/ns/activitystreams",  
-	"https://eko.network/ns"  
-  ],  
-  "type": "Person",  
-  "id": "https://eko.network/user/user1",  
-  "preferredUsername": "user1",  
-  "inbox": "https://eko.network/user/user1/inbox",  
-  "outbox": "https://eko.network/user/user1/outbox",  
-  "eko:keyPackages": {  
-	"type": "Collection",  
-	"id": "https://eko.network/user/user1/keyPackages",  
-	"items": [  
-  		"https://eko.network/user/user1/keyPackage/A",  
-  		"https://eko.network/user/user1/keyPackage/B"  
-	]  
-  }  
-}  
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://eko.network/ns"
+  ],
+  "type": "Person",
+  "id": "https://eko.network/user/user1",
+  "preferredUsername": "user1",
+  "inbox": "https://eko.network/user/user1/inbox",
+  "outbox": "https://eko.network/user/user1/outbox",
+  "eko:keyPackages": {
+    "type": "Collection",
+    "id": "https://eko.network/user/user1/keyPackages",
+    "items": [
+      "https://eko.network/user/user1/keyPackage/A",
+      "https://eko.network/user/user1/keyPackage/B"
+    ]
+  }
+}
 ```
 
 #### KeyPackage
 
 Example: `KeyPackage` object  
 ```json  
-{  
-  "@context": "https://eko.network/ns",  
-  "type": "KeyPackage",  
-  "id": "https://eko.network/user/user1/keyPackage/A",  
-  "deviceId": "<device-id>",  
-  "identityKey": "base64-encoded",  
-  "registrationId": 1,  
-  "preKeyId": 1,  
-  "preKey": "base64-encoded",  
-  "signedPreKeyId": 1,  
-  "signedPreKey": "base64-encoded",  
-  "signedPreKeySignature": "base64-encoded"  
-}  
+{
+  "@context": "https://eko.network/ns",
+  "type": "KeyPackage",
+  "id": "https://eko.network/user/user1/keyPackage/A",
+  "deviceId": "<device-id>",
+  "identityKey": "base64-encoded",
+  "registrationId": 1,
+  "preKeyId": 1,
+  "preKey": "base64-encoded",
+  "signedPreKeyId": 1,
+  "signedPreKey": "base64-encoded",
+  "signedPreKeySignature": "base64-encoded"
+}
 ```
 
 ### Messages
@@ -147,27 +147,32 @@ All Signal encrypted messages are transported inside a `SignalEnvelope`.
 
 Example: User sending a `SignalEnvelope`  
 ```json  
-{  
-  "@context": "https://www.w3.org/ns/activitystreams",  
-  "type": "Create",  
-  "actor": "https://eko.network/user/user1",  
-  "to": ["https://other.network/user/user2"],  
-  "object": {  
-	"type": ["Object", "SignalEnvelope"],  
-	"mediaType": "message/signal",  
-	"encoding": "base64",  
-	"messages": [  
-  	{  
-    	"deviceId": "device-A",  
-    	"content": "base64-encoded-ciphertext"  
-  	},  
-  	{  
-    	"deviceId": "device-B",  
-    	"content": "base64-encoded-ciphertext"  
-  	}  
-	]  
-  }  
-}  
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Create",
+  "actor": "https://eko.network/user/user1",
+  "to": [
+    "https://other.network/user/user2"
+  ],
+  "object": {
+    "type": [
+      "Object",
+      "SignalEnvelope"
+    ],
+    "mediaType": "message/signal",
+    "encoding": "base64",
+    "messages": [
+      {
+        "deviceId": "device-A",
+        "content": "base64-encoded-ciphertext"
+      },
+      {
+        "deviceId": "device-B",
+        "content": "base64-encoded-ciphertext"
+      }
+    ]
+  }
+}
 ```
 
 ## Encrypted Content
@@ -198,28 +203,27 @@ The following restrictions apply to content objects embedded in encrypted messag
 
 Example: Sending Attachments  
 ```json  
-[  
-  {  
-    "contentType": "image/jpeg",  
-    "encryption": "AES-256-GCM",  
-    "key": "b64_encoded_key",  
-    "url": "https://cdn.example.org/attachments/abc-123-xyz",  
-    "size": 1048576,  
-    "name": "image.jpg",  
-    "blurHash": "LAAwF",  
-    "digest": "sha256_hash"  
-  },  
-  {  
-    "contentType": "application/gzip",  
-    "encryption": "AES-256-GCM",  
-    "key": "b64_encoded_key",  
-    "url": "https://cdn.example.org/attachments/def-456-uvw",  
-    "size": 34023,  
-    "name": "file.tar.gz",  
-    "digest": "sha256_hash"  
+[
+  {
+    "contentType": "image/jpeg",
+    "encryption": "AES-256-GCM",
+    "key": "b64_encoded_key",
+    "url": "https://cdn.example.org/attachments/abc-123-xyz",
+    "size": 1048576,
+    "name": "image.jpg",
+    "blurHash": "LAAwF",
+    "digest": "sha256_hash"
+  },
+  {
+    "contentType": "application/gzip",
+    "encryption": "AES-256-GCM",
+    "key": "b64_encoded_key",
+    "url": "https://cdn.example.org/attachments/def-456-uvw",
+    "size": 34023,
+    "name": "file.tar.gz",
+    "digest": "sha256_hash"
   }
-
-]  
+]
 ```
 
 * `inReplyTo`  
@@ -227,38 +231,38 @@ Example: Sending Attachments
 
 Example: Create activity  
 ```json  
-{  
-  "@context": "https://www.w3.org/ns/activitystreams",  
-  "type": "Create",  
-  "id": "urn:uuid:<uuid>",  
-  "object": {  
-	"type": "Note",  
-	"id": "urn:uuid:<uuid>",  
-	"content": "Hello, World!"  
-  }  
-}  
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Create",
+  "id": "urn:uuid:<uuid>",
+  "object": {
+    "type": "Note",
+    "id": "urn:uuid:<uuid>",
+    "content": "Hello, World!"
+  }
+}
 ```  
 Example: Update activity  
 ```json  
-{  
-  "@context": "https://www.w3.org/ns/activitystreams",  
-  "type": "Update",  
-  "id": "urn:uuid:<uid>",  
-  "object": {  
-	"type": "Note",  
-	"id": "urn:uuid:<uid>",  
-	"content": "Hello, World Universe!"  
-  }  
-}  
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Update",
+  "id": "urn:uuid:<uid>",
+  "object": {
+    "type": "Note",
+    "id": "urn:uuid:<uid>",
+    "content": "Hello, World Universe!"
+  }
+}
 ```  
 Example: Delete activity  
 ```json  
-{  
-  "@context": "https://www.w3.org/ns/activitystreams",  
-  "type": "Delete",  
-  "id": "urn:uuid:<uid>",  
-  "object": "urn:uuid:<uid>"  
-}  
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Delete",
+  "id": "urn:uuid:<uid>",
+  "object": "urn:uuid:<uid>"
+}
 ```
 
 ## Client-to-Server Protocol (C2S)
@@ -312,17 +316,19 @@ When a server receives a `SignalEnvelope`, it SHOULD:
 
 Example: Reject  
 ```json  
-{  
-  "@context": [  
-	"https://www.w3.org/ns/activitystreams",  
-	"https://eko.network/ns"  
-  ],  
-  "type": "Reject",  
-  "actor": "https://other.network",  
-  "to": ["https://eko.network/user/user1"],  
-  "object": "https://eko.network/user/signal/<envelope-id>",  
-  "summary": "SignalEnvelope rejected: encrypted messages missing for one or more recipient devices."  
-}  
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://eko.network/ns"
+  ],
+  "type": "Reject",
+  "actor": "https://other.network",
+  "to": [
+    "https://eko.network/user/user1"
+  ],
+  "object": "https://eko.network/user/signal/<envelope-id>",
+  "summary": "SignalEnvelope rejected: encrypted messages missing for one or more recipient devices."
+}
 ```
 
 ## E2E Encryption
