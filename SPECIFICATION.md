@@ -58,36 +58,39 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 #### AddDevice
 ```json
 {
-  "@context": [  
-	"https://www.w3.org/ns/activitystreams",  
-	"https://eko.network/ns"  
-  ],  
-  "type": "AddDevice",  
-  "id": "https://eko.network/user/devices/did",
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://eko.network/ns"
+  ],
+  "type": "AddDevice",
+  "id": "https://eko.network/user/devices/actions/<id>",
   "prev": "<hash of previous node or null if first node>",
-  "eko:keyPackage": "https://eko.network/user/user1/keyPackage",  
+  "did": 0,
+  "eko:keyPackage": "https://eko.network/user/user1/keyPackage",
   "publicKey": "<device publicKey>",
-  "signatures": [
-    "<signerDid>":"<singature on all other fields>"
-  ]
+  "signatures": {
+    "<signerDid>": "<singature on all other fields>"
+  }
 }
 ```
+
 #### RevokeDevice
 ```json
 {
-  "@context": [  
-	"https://www.w3.org/ns/activitystreams",  
-	"https://eko.network/ns"  
-  ],  
-  "type": "RevokeDevice",  
-  "id": "https://eko.network/user/devices/did",
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://eko.network/ns"
+  ],
+  "type": "RevokeDevice",
+  "id": "https://eko.network/user/devices/actions/<id>",
+  "did": 0,
   "prev": "<hash of previous node>",
-  "signatures": [
-    "<signerDid>":"<singature on all other fields>"
-  ]
+  "signatures": {
+    "<signerDid>": "<singature on all other fields>"
+  }
 }
 ```
-To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove the signatures field and format the remaining node in compliance with RFC 8785, signing with their identityKey,
+To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove the signatures field and format the remaining node in compliance with RFC 8785, signing with their identityKey.
 
 #### KeyPackages
 
