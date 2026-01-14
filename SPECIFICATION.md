@@ -43,7 +43,7 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 * **Group**: A set of Users that receive the same messages.
 * **Group Epoch**: The monotonically increasing reference of the state of a group.
 * **Group Master Key**: Used to derive message encryption keys for groups.
-* **EncryptedGroupState**: An opaque, end-to-end encrypted representation of a Group State, stored by the server for device synchronization. (TODO)
+* **EncryptedGroupState**: An opaque, end-to-end encrypted representation of a Group State, stored by the server for device synchronization.
 
 ## ActivityPub Model
 
@@ -292,13 +292,25 @@ Example: Reject
 ```
 
 ## Group Messaging
-The following describes the protocol implemented by eko-messenger for e2e encrypted message using client-managed group state and key material. Group membership, authorization, and message validity are enforced exclusively by clients to avoid Server knowledge of groups. Servers are not trusted to maintain or validate group state. This protocol is designed to mirror Signal Groups.
-#### Group
-A Group represents an encrypted conversation between multiple members.
-- Identified by a stable, non-resolvable `groupId`.  MUST be a 128-bit UUID.
-- Exists only within encrypted payloads and client local storage.
+This section defines end-to-end encrypted group messaging using client-managed group state and cryptographic authorization.
 
-#### Group State
+Group membership, roles, and state transitions are enforced exclusively by clients.
+Servers are intentionally blind to group semantics and MUST NOT interpret, validate, or enforce group state.
+
+This design mirrors Signal's modern group architecture ([paper](https://eprint.iacr.org/2019/1416.pdf)), excluding server-mediated anonymous credential proofs, which are explicitly deferred to future versions of this specification.
+### Group
+A Group represents an encrypted conversation between multiple members.
+- Identified by a stable, `groupId`.  MUST be a 128-bit UUID.
+- Exists only within encrypted payloads, client local storage, and encrypted blobs stored on the server.
+#### Server Blind Groups
+> This version excludes server mediated authorization for group state access or modification. We leave AuthCredentials for a new version of the specification as described in the [blog](https://signal.org/blog/signal-private-group-system/) and [paper](https://eprint.iacr.org/2019/1416.pdf).
+- Servers do not authenticate or authorize group membership.
+- Servers do not validate group control operations.
+- Server store `EncryptedGroupState` objects as opaque blobs without enforcing access control.
+
+All group membership, authorization, and state transition validity are enforced exclusively by clients using shared cryptographic secrets. Anonymous credentials and zero knowledge proofs are out of scope for now.
+
+### Group State
 Each client participating in a Group maintains a local Group State that contains the `groupId`, `epoch`, member list, admin roles, and master key.
 
 Example: Group State
@@ -313,7 +325,7 @@ Example: Group State
   "admins": [
     "https://eko.network/user/alice"
   ],
-  "groupMasterKey": "shared-key",
+  "groupMasterKey": "<base64>",
 }
 ```
 
@@ -323,24 +335,83 @@ Example: Group State
 - Messages referencing a stale or unknown epoch MUST be rejected by the client.
 
 `groupMasterKey`
-- Symmetricc secret.
-- Dervies the message encryption keys.
-- MUST be rotated whenever a member is removed and MUST be distributed via e2e encrypted messages.
+- Symmetric secret shared by all current group members.
+- Derives the message encryption keys and group authentication (signing) keys.
+- MUST be rotated whenever a member is removed.
 
+#### Server Encrypted Group State
+To support device synchronization and recovery, clients MAY upload encrypted snapshots of Group State to their home server.
+
+Example: Server Visible EncryptedGroupState
+```json
+{
+  "type": "EncryptedGroupState",
+  "id": "https://eko.network/user/alice/groupState/<group-id>",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 7,
+  "mediaType": "application/eko-group-state",
+  "encoding": "base64",
+  "content": "<base64-encoded-ciphertext>"
+}
+```
+
+##### Server Requirements
+For each User, the server MUST:
+- Store only the latest `EncryptedGroupState` per `groupId`
+- Treat all group state blobs as opaque
+- Replace older blobs when a higher epoch is received
+- Associate blobs only with the owning User
+
+Servers MUST NOT:
+- Inspect contents
+- Modify contents
+- Enforce access control
+- Infer membership
+#### Group State Authentication
+All group control objects MUST be authenticated using a Group Signing Key derived from the previous Group State.
+
+##### Group Signing Key
+```
+groupSigningKey = HKDF(
+  input = groupMasterKey,
+  info  = "eko.group.signing",
+  length = 32
+)
+```
+
+##### Authentication Algorithm
+Compute the HMAC with the canonical JSON of the group control object.
+```
+mac = HMAC_SHA256(
+    key = groupSigningKey,
+    message = canonical_json(groupControlObject)
+)
+```
+
+Example: Authenticated Group Control Message
+```json
+{
+  "type": "GroupMemberAdd",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 6,
+  "added": ["https://new.network/user/charlie"],
+  "signature": {
+    "alg": "HMAC-SHA256",
+    "value": "<base64>"
+  }
+}
+```
+
+To prevent malicious servers from modifying Groups, clients MUST reject unsigned or invalidly signed group control messages.
 ### Creating a Group
-Initializes a new Group and establishes the state
-- Initializes `groupId`.
-- Sets `epoch` to 1.
-- Distributes the Group Master Key.
-- Defines the members and roles.
-
-A `GroupCreate` object must be sent to every Device of every initial Group member as an encrypted message as described above.
+1. Creator generates a `groupId` and `groupMasterKey`.
+2. Initializes `epoch=1`, member list, admin list.
+3. Sends a `GroupCreate` message to every device of every initial member.
 
 Example: Group Creation
 ```json
 {
   "type": "GroupCreate",
-  "id": "urn:uuid:<uuid>",
   "groupId": "urn:uuid:<group-id>",
   "epoch": 1,
   "members": [
@@ -350,16 +421,19 @@ Example: Group Creation
   "admins": [
     "https://eko.network/user/alice"
   ],
-  "groupMasterKey": "<base64-encoded-key>"
+  "groupMasterKey": "<base64>"
 }
 ```
 
 ### Modifying Group Membership
+Only clients whose local Group State grants them permission (by being present in the admin list) MAY generate valid group control messages.
 #### Adding a Member(s)
-1. Admin (TODO: can only admins modify the group membership? Looks like Signal has permissions that the admin may change to allow for other members to modify the group):
-	1. Generates a new `epoch` (increment number) and `groupMasterKey`.
-	2. Sends an encrypted `GroupMemberAdd` activity to existing members.
-	3. Sends a GroupCreate to the new member(s).
+1. The authorized client
+	1. Increments the `epoch`.
+	2. Rotates the `groupMasterKey`.
+2. Sends
+	1. `GroupMemberAdd` to existing members.
+	2. `GroupCreate` to new member(s).
 
 Example: Adding a New Group Member
 ```json
@@ -383,9 +457,11 @@ Example: Adding a New Group Member
 ```
 
 #### Removing a Member
-1. Admin rotates the `groupMasterKey`.
-2. Increments the `epoch`.
-3. Sends a `GroupMemberRemove` activity to the remaining members.
+1. The authorized client
+	1. Removes the member.
+	2. Rotates the `groupMasterKey`.
+	3. Increments the `epoch`.
+2. Sends a `GroupMemberRemove` activity to the remaining members.
 
 Example: Removing a Member
 ```json
@@ -403,7 +479,16 @@ Example: Removing a Member
 Note: Because of federation and servers not knowing group membership, removed users may still receive group messages, but cannot decrypt new messages.
 ### Sending a Group Message
 1. Client checks it has the current Group State.
-2. Creates a Note activity.
+2. Client creates a standard ActivityPub object.
+	1. Object includes `groupId` and `epoch`.
+3. Object is encrypted using keys derived from `groupMasterKey`.
+4. One `SignalEnvelope` is sent per recipient user, containing messages for each device.
+
+Clients MUST drop:
+- Messages with stale epochs.
+- Messages failing decryption.
+- Messages failing group authentication.
+
 Example: Create Note Activity in a Group
 ```json
 {
@@ -417,10 +502,6 @@ Example: Create Note Activity in a Group
   }
 }
 ```
-3. Activity is encrypted using a key derived from the Group Master Key.
-4. Send a `SignalEnvelope` per user, with an encrypted message per device to preserve existing device verification.
-
-Note: Clients MUST drop messages with old epochs.
 
 ## E2E Encryption
 
@@ -434,7 +515,7 @@ Note: Clients MUST drop messages with old epochs.
 
 * Servers are trusted to maintain the device list and correct keys.
   * See Federated Key Transparency work.
-* Server are not trusted to enforce group membership correctness. Clients are responsible for validating group state and membership based on encrypted group control messages.
+* Servers may store encrypted Group State for the purpose of device synchronization. Servers are not trusted to read, interpret, or modify Group State contents. Compromise of a server MUST NOT reveal group membership, cryptographic keys, or message content.
 
 ## eko-messenger Implementation Guarantees
 
