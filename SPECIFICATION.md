@@ -47,10 +47,99 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 
 * Each User is represented as an ActivityPub Actor (typically of type `Person`) with a standard inbox and outbox.
 
+#### KeyPackage
+
+Example: `KeyPackage` object  
+```json  
+{
+  "@context": "https://eko.network/ns",
+  "type": "KeyPackage",
+  "id": "https://eko.network/user/user1/keyPackage/A",
+  "deviceId": "<device-id>",
+  "identityKey": "base64-encoded",
+  "registrationId": 1,
+  "preKeyId": 1,
+  "preKey": "base64-encoded",
+  "signedPreKeyId": 1,
+  "signedPreKey": "base64-encoded",
+  "signedPreKeySignature": "base64-encoded"
+}
+```
+
+### KeyCollection
+
+To facilitate the distribution of `KeyPackage`s we define `KeyCollection`, a specialized type of Collection. Unlike standard Collections it is optimized for "Pop" semantics, where retrieving an item implies the consumption of said object.
+
+#### Object
+A `KeyCollection` must be owned by an Actor or a sub-entity such as a Device.
+
+Properties:
+* type: MUST be `KeyCollection`
+* attributedTo: Device owning the collection.
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "KeyCollection": "TODO"
+    }
+  ],
+  "id": "https://example.com/alice/device/1/keys",
+  "type": "KeyCollection",
+  "attributedTo": "https://example.com/alice/device/1",
+}
+```
+#### Access
+External actors MUST NOT be able to read or browse the collection. External actors may only interact with the collection through the `Take` activity.
+
+#### `Add` activity
+
+The owner of the collection may add one or more `KeyBundles` to the collection.
+
+```json
+{
+  "type": "Add",
+  "actor": "https://example.com/alice",
+  "object": [
+    {
+      "type": "KeyPackage",
+      "value": "..."
+    },
+    {
+      "type": "KeyPackage",
+      "value": "..."
+    }
+  ],
+  "target": "https://example.com/alice/device/1/keys"
+}
+```
+
+#### `Take` activity
+
+We define an activity `Take` which user may use to interact with another users `KeyCollection`. To obtain key material for another user, a user will Post a `Take` to their inbox.
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "Take": "TODO"
+    }
+  ],
+  "type": "Take",
+  "actor": "https://example.com/bob",
+  "object": "https://example.com/alice/device/1/keys",
+}
+```
+
+Upon receiving a `Take` activity, the server SHOULD:
+* Select a `KeyPackage` from the user's collection.
+* If there are multiple key packages in the collection, atomically remove the selected `KeyPackage`.
+* Return the selected `KeyPackage`.
+
 ### Devices
 
-* Each User may have one or more Devices. Devices are represented as a hash chain in the User.  
-* Each Actor exposes a `Devices` collection containing references to `AddDevice` and `RevokeDevice` objects. Each `AddDevice` object should point to a `KeyPackage`. 
+* Each Actor exposes a `Devices` collection containing references to `AddDevice` and `RevokeDevice` objects forming a hash chain. Each `AddDevice` object should contain a reference to a `KeyCollection`. 
 * Device Lifecycle  
   * Add device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) activity addressed to the `Devices` collection for a `AddDevice` object.  
   * Remove device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) activity addressed to the `Devices` collection for a `Revoke` object.
@@ -117,24 +206,6 @@ Example: User with keyPackages collection
 }
 ```
 
-#### KeyPackage
-
-Example: `KeyPackage` object  
-```json  
-{
-  "@context": "https://eko.network/ns",
-  "type": "KeyPackage",
-  "id": "https://eko.network/user/user1/keyPackage/A",
-  "deviceId": "<device-id>",
-  "identityKey": "base64-encoded",
-  "registrationId": 1,
-  "preKeyId": 1,
-  "preKey": "base64-encoded",
-  "signedPreKeyId": 1,
-  "signedPreKey": "base64-encoded",
-  "signedPreKeySignature": "base64-encoded"
-}
-```
 
 ### Messages
 
