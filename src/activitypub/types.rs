@@ -3,8 +3,6 @@ use serde_json::Value;
 use serde_with::base64::Base64;
 use serde_with::serde_as;
 
-use crate::errors::AppError;
-
 const ACTIVITY_STREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
 fn default_context_value() -> Value {

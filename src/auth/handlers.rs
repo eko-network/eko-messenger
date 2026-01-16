@@ -56,6 +56,14 @@ pub struct LoginRequest {
     pub signed_pre_key: SignedPreKey,
 }
 
+#[derive(Deserialize, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignupRequest {
+    pub email: String,
+    pub password: String,
+    pub username: String,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
@@ -84,6 +92,11 @@ pub trait IdentityProvider: Send + Sync {
     ) -> Result<(Person, String), AppError>;
     async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError>;
     async fn uid_from_username(&self, username: &str) -> Result<String, AppError>;
+    async fn signup(&self, _req: SignupRequest) -> Result<StatusCode, AppError> {
+        Err(AppError::BadRequest(
+            "Signup is not supported by this provider".to_string(),
+        ))
+    }
 }
 
 pub struct Auth {
@@ -189,6 +202,10 @@ impl Auth {
         self.storage.devices.logout_device(refresh_token).await
     }
 
+    pub async fn signup(&self, req: SignupRequest) -> Result<StatusCode, AppError> {
+        self.provider.signup(req).await
+    }
+
     pub fn verify_access_token(&self, token: &str) -> Result<Claims, AppError> {
         let data = self.jwt_helper.decrypt_jwt(token);
 
@@ -214,6 +231,13 @@ pub async fn login_handler(
         .auth
         .login(req, &ip.to_string(), &user_agent.to_string(), &state.domain)
         .await
+}
+
+pub async fn signup_handler(
+    State(state): State<AppState>,
+    Json(req): Json<SignupRequest>,
+) -> Result<StatusCode, AppError> {
+    state.auth.signup(req).await
 }
 
 #[derive(Deserialize)]

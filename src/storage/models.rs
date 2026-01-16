@@ -39,3 +39,12 @@ pub struct RotatedRefreshToken {
     pub did: i32,
     pub expires_at: OffsetDateTime,
 }
+
+#[derive(Debug, Clone)]
+pub struct StoredUser {
+    pub uid: String,
+    pub username: String,
+    pub email: String,
+    pub password_hash: String,
+    pub created_at: OffsetDateTime,
+}
