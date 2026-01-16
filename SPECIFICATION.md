@@ -56,7 +56,6 @@ Example: `KeyPackage` object
   "type": "KeyPackage",
   "id": "https://eko.network/user/user1/keyPackage/A",
   "deviceId": "<device-id>",
-  "identityKey": "base64-encoded",
   "registrationId": 1,
   "preKeyId": 1,
   "preKey": "base64-encoded",
@@ -205,7 +204,6 @@ Example: User with keyPackages collection
   }
 }
 ```
-
 
 ### Messages
 
