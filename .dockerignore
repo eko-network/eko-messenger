@@ -1,0 +1,10 @@
+target/
+.git/
+.direnv/
+nix/
+result
+*.pem
+*.json
+!Cargo.toml
+!Cargo.lock
+!.sqlx/

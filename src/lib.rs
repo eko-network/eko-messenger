@@ -120,7 +120,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = app(app_state, ip_source)?;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listen_addr = var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let addr: SocketAddr = format!("{}:{}", listen_addr, port).parse()?;
+
     info!("Server listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await?;

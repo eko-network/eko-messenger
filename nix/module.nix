@@ -28,7 +28,7 @@ in {
 
     domain = lib.mkOption {
       type = lib.types.str;
-      example = "messenger.example.com";
+      example = "http://127.0.0.1:3000";
       description = "Domain name for the service";
     };
 
@@ -77,6 +77,12 @@ in {
       type = lib.types.str;
       default = "ConnectInfo";
       description = "IP source configuration";
+    };
+
+    listenAddr = lib.mkOption {
+      type = lib.types.str;
+      default = "127.0.0.1";
+      description = "The address the server will bind to";
     };
 
     firebaseApiKey = lib.mkOption {
@@ -147,6 +153,7 @@ in {
           PORT = toString cfg.port;
           DOMAIN = cfg.domain;
           IP_SOURCE = cfg.ipSource;
+          LISTEN_ADDR = cfg.listenAddr;
           RUST_LOG = cfg.logLevel;
           AUTH_PROVIDER = cfg.authProvider;
           JWT_SECRET = cfg.jwtSecret;
