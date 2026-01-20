@@ -1,14 +1,15 @@
-pub mod capabilities;
-pub mod inbox;
-pub mod outbox;
+pub mod handlers;
 pub mod types;
-pub mod webfinger;
 
-pub use capabilities::capabilities_handler;
-pub use inbox::get_inbox;
-pub use outbox::post_to_outbox;
+pub use handlers::{
+    actor_handler,
+    capabilities_handler,
+    get_inbox,
+    post_to_outbox,
+    webfinger_handler,
+};
+
 pub use types::{
     CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, Person, PreKeyBundle, WithId,
-    actor_url, create_person,
+    actor_url, actor_uid, create_person, generate_create,
 };
-pub use webfinger::webfinger_handler;

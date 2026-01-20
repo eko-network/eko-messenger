@@ -10,9 +10,8 @@ pub mod websocket;
 
 use crate::{
     activitypub::{
-        Person,
-        capabilities::{NOTIF_URL, SOCKET_URL},
-        capabilities_handler, get_inbox, post_to_outbox, webfinger_handler,
+        handlers::capabilities::{NOTIF_URL, SOCKET_URL},
+        actor_handler, capabilities_handler, get_inbox, post_to_outbox, webfinger_handler,
     },
     auth::{
         Auth, FirebaseAuth, LocalIdentityProvider, login_handler, logout_handler,
@@ -20,7 +19,6 @@ use crate::{
     },
     config::storage_config,
     crypto::get_bundle,
-    errors::AppError,
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
@@ -29,8 +27,7 @@ use crate::{
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
-    extract::{Path, State},
-    response::{Html, Json},
+    response::Html,
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
@@ -159,12 +156,4 @@ async fn root_handler() -> Html<&'static str> {
         </body>
         </html>
     ")
-}
-
-async fn actor_handler(
-    State(state): State<AppState>,
-    Path(uid): Path<String>,
-) -> Result<Json<Person>, AppError> {
-    let actor = state.auth.provider.person_from_uid(&uid).await?;
-    Ok(Json(actor))
 }
