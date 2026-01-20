@@ -88,3 +88,26 @@ pub trait NotificationStore: Send + Sync {
         dids: &[i32],
     ) -> Result<Vec<web_push::SubscriptionInfo>, AppError>;
 }
+
+#[async_trait]
+pub trait UserStore: Send + Sync {
+    async fn get_user_by_email(
+        &self,
+        email: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+    async fn get_user_by_uid(
+        &self,
+        uid: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+    async fn get_user_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+    async fn create_user(
+        &self,
+        uid: &str,
+        username: &str,
+        email: &str,
+        password_hash: &str,
+    ) -> Result<(), AppError>;
+}

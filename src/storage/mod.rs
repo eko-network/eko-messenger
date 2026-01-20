@@ -12,4 +12,5 @@ pub struct Storage {
     pub outbox: Arc<dyn OutboxStore>,
     pub devices: Arc<dyn DeviceStore>,
     pub actors: Arc<dyn ActorStore>,
+    pub users: Arc<dyn UserStore>,
 }

@@ -4,7 +4,7 @@ use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };
 use serde::{Deserialize, Serialize};
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use crate::auth::handlers::JWT_LIFESPAN;
 
