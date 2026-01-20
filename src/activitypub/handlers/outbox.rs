@@ -49,9 +49,6 @@ pub async fn post_to_outbox(
         created_at: OffsetDateTime::now_utc(),
     };
 
-    // TODO: do we verify the outbox activity (make sure it has all the devices, etc) here?
-    // or in the insert_inbox_entry function probably instead? so all inserts only succeed if valid?
-
     MessagingService::process_outgoing_message(&state, &payload, &payload.actor).await?;
 
     Ok((StatusCode::CREATED, Json(payload)).into_response())
