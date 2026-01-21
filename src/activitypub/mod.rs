@@ -1,5 +1,7 @@
+pub mod client;
 pub mod handlers;
 pub mod types;
+pub mod validation;
 
 pub use handlers::{
     actor_handler,
