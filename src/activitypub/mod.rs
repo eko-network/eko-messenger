@@ -7,6 +7,7 @@ pub use handlers::{
     actor_handler,
     capabilities_handler,
     get_inbox,
+    get_key_bundles,
     post_to_outbox,
     webfinger_handler,
 };

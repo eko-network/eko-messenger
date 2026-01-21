@@ -1,26 +1,20 @@
 use crate::{
     AppState,
-    activitypub::{
-        CreateActivity, EncryptedMessage, NoId, WithId,
-        types::{actor_uid, generate_create},
-    },
+    activitypub::{CreateActivity, EncryptedMessage, NoId, WithId},
     auth::Claims,
     errors::AppError,
-    storage::models::{StoredInboxEntry, StoredOutboxActivity},
+    messaging::MessagingService,
+    storage::models::StoredOutboxActivity,
 };
 use axum::{
     Json, debug_handler,
-    extract::{
-        Extension, State,
-        ws::{Message, Utf8Bytes},
-    },
+    extract::{Extension, State},
     http::StatusCode,
     response::IntoResponse,
 };
 use serde_json::json;
 use std::sync::Arc;
 use time::OffsetDateTime;
-use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 #[debug_handler]
@@ -58,78 +52,7 @@ pub async fn post_to_outbox(
     // TODO: do we verify the outbox activity (make sure it has all the devices, etc) here?
     // or in the insert_inbox_entry function probably instead? so all inserts only succeed if valid?
 
-    //This maybe shouldn't be a loop, group messages are differernt
-    for recipient_actor_id in &payload.object.to {
-        // If receipient in our server, put entry directly in inbox (can also make a combined function?)
-        // if state
-        //     .storage
-        //     .actors
-        //     .is_local_actor(recipient_actor_id)
-        //     .await?
-        // {
-        let mut did_to_notif: Vec<i32> = Vec::with_capacity(payload.object.content.len());
-        for entry in &payload.object.content {
-            info!("SEND for {}, {}", recipient_actor_id, entry.to);
-
-            // Check if the recipient is online via WebSocket
-            if let Some(sender) = state
-                .sockets
-                .get(&(actor_uid(recipient_actor_id)?, entry.to))
-            {
-                debug!(
-                    "{} - {} online, trying to send via socket",
-                    recipient_actor_id, entry.to
-                );
-                // Client is online - push directly via WebSocket
-                let message = generate_create(
-                    recipient_actor_id.clone(),
-                    payload.actor.clone(),
-                    entry.to,
-                    entry.from,
-                    entry.content.clone(),
-                );
-
-                let message_json = serde_json::to_string(&message)?;
-
-                if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
-                    warn!(
-                        "Failed to send to online client {}, falling back to inbox: {}",
-                        recipient_actor_id, e
-                    );
-                // Fall through to insert in inbox
-                } else {
-                    continue;
-                }
-            }
-
-            // Client is offline or WebSocket send failed, insert into inbox
-            state
-                .storage
-                .inbox
-                .insert_inbox_entry(
-                    recipient_actor_id,
-                    entry.to,
-                    StoredInboxEntry {
-                        actor_id: payload.actor.clone(),
-                        from_did: entry.from,
-                        content: entry.content.clone(),
-                    },
-                )
-                .await?;
-            // Only notify an offline device
-            did_to_notif.push(entry.to);
-        }
-        state.notification_service.notify(&did_to_notif).await?
-        // } else {
-        //     info!("Forign id {}", recipient_actor_id);
-        //     // Save activity
-        //     state.storage.outbox.insert_activity(&stored).await?;
-        //     // TODO: federate the message. im thinking we need to do the following:
-        //     // - Resolve recipient inbox URL (WebFinger/actor fetch), then enqueue some delivery job keyed by (activity_id, target_inbox_url) for retries & idempotency.
-        //     // - The delivery worker signs and POSTs the activity to the remote inbox.
-        //     // - Need to figure out what we want to do for activity storage. I guess keep it in there until successful response from server?
-        // }
-    }
+    MessagingService::process_outgoing_message(&state, &payload, &payload.actor).await?;
 
     Ok((StatusCode::CREATED, Json(payload)).into_response())
 }

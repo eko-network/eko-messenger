@@ -1,8 +1,10 @@
 pub mod activitypub;
 pub mod auth;
 pub mod config;
-pub mod crypto;
+pub mod devices;
 pub mod errors;
+pub mod groups;
+pub mod messaging;
 pub mod middleware;
 pub mod notifications;
 pub mod storage;
@@ -11,14 +13,14 @@ pub mod websocket;
 use crate::{
     activitypub::{
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
-        actor_handler, capabilities_handler, get_inbox, post_to_outbox, webfinger_handler,
+        actor_handler, capabilities_handler, get_inbox, get_key_bundles, post_to_outbox,
+        webfinger_handler,
     },
     auth::{
         Auth, FirebaseAuth, LocalIdentityProvider, login_handler, logout_handler,
         refresh_token_handler, signup_handler,
     },
     config::storage_config,
-    crypto::get_bundle,
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
@@ -56,7 +58,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route(&format!("{}/register", NOTIF_URL), post(register_handler))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
-        .route("/users/{uid}/keys/bundle.json", get(get_bundle))
+        .route("/users/{uid}/keys/bundle.json", get(get_key_bundles))
         .route(SOCKET_URL, get(ws_handler))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
