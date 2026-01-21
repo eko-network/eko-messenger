@@ -9,7 +9,7 @@ pub fn validate_activity(activity: &Value) -> Result<(), AppError> {
     //    Validate activity type is supported
     //    Check object structure if present
     //    Validate Eko-specific requirements
-    
+
     // Check for @context
     if !activity.get("@context").is_some() {
         // Not requiring it because ActivityPub says implementors "should" include it,
@@ -17,19 +17,15 @@ pub fn validate_activity(activity: &Value) -> Result<(), AppError> {
         // TODO do we do something with @context?
         tracing::debug!("Activity missing @context")
     }
-    
+
     // Check for required type
     if !activity.get("type").is_some() {
-        return Err(AppError::BadRequest(
-            "Activity missing type".to_string()
-        ));
+        return Err(AppError::BadRequest("Activity missing type".to_string()));
     }
-    
+
     // Check for required actor
     if !activity.get("actor").is_some() {
-        return Err(AppError::BadRequest(
-            "Activity missing actor".to_string()
-        ));
+        return Err(AppError::BadRequest("Activity missing actor".to_string()));
     }
 
     // Check for id
@@ -37,7 +33,7 @@ pub fn validate_activity(activity: &Value) -> Result<(), AppError> {
         // Not required because some objects are transient
         tracing::debug!("Activity is transient")
     }
-    
+
     tracing::debug!("Activity validation passed (basic check only)");
     Ok(())
 }
@@ -53,21 +49,19 @@ pub fn is_supported_activity_type(activity_type: &str) -> bool {
 /// Validates the structure of a Create activity specifically
 pub fn validate_create_activity(activity: &Value) -> Result<(), AppError> {
     validate_activity(activity)?;
-    
+
     // Check type is Create
     if activity.get("type").and_then(|t| t.as_str()) != Some("Create") {
-        return Err(AppError::BadRequest(
-            "Expected Create activity".to_string()
-        ));
+        return Err(AppError::BadRequest("Expected Create activity".to_string()));
     }
-    
+
     // Check for required object
     if !activity.get("object").is_some() {
         return Err(AppError::BadRequest(
-            "Create activity missing object".to_string()
+            "Create activity missing object".to_string(),
         ));
     }
-    
+
     Ok(())
 }
 
@@ -83,7 +77,7 @@ mod tests {
             "type": "Create",
             "actor": "https://example.com/users/alice"
         });
-        
+
         assert!(validate_activity(&activity).is_ok());
     }
 
@@ -92,7 +86,7 @@ mod tests {
         let activity = json!({
             "actor": "https://example.com/users/alice"
         });
-        
+
         assert!(validate_activity(&activity).is_err());
     }
 

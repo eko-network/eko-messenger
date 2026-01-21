@@ -4,5 +4,4 @@ pub struct GroupService;
 
 impl GroupService {
     // TODO groups
-
 }

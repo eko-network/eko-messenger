@@ -12,9 +12,9 @@ pub mod websocket;
 
 use crate::{
     activitypub::{
+        actor_handler, capabilities_handler, get_inbox, get_key_bundles,
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
-        actor_handler, capabilities_handler, get_inbox, get_key_bundles, post_to_outbox,
-        webfinger_handler,
+        post_to_outbox, webfinger_handler,
     },
     auth::{
         Auth, FirebaseAuth, LocalIdentityProvider, login_handler, logout_handler,

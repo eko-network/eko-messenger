@@ -32,12 +32,12 @@ impl ActivityPubClient {
         // 3. Sign request with HTTP Signatures
         // 4. POST to inbox URL
         // 5. Handle response (200/202 = success, 4xx/5xx = error)
-        
+
         tracing::info!("Would send activity to inbox: {}", inbox_url);
-        
+
         // Placeholder implementation
         let _body = serde_json::to_string(activity)?;
-        
+
         // TODO: Sign and send request
         // let response = self.http_client
         //     .post(inbox_url)
@@ -46,7 +46,7 @@ impl ActivityPubClient {
         //     .body(body)
         //     .send()
         //     .await?;
-        
+
         tracing::warn!("ActivityPub federation not yet implemented");
         Ok(())
     }
@@ -58,9 +58,9 @@ impl ActivityPubClient {
         // 1. Fetch actor document from actor_id URL
         // 2. Parse JSON
         // 3. Extract and return inbox URL
-        
+
         tracing::info!("Would resolve inbox for actor: {}", actor_id);
-        
+
         // Placeholder - just append /inbox for now
         Ok(format!("{}/inbox", actor_id))
     }

@@ -50,16 +50,16 @@ impl MessagingService {
             &crate::activitypub::actor_uid(recipient_actor_id)?,
         )
         .await?;
-        
+
         crate::messaging::envelope::validate_envelope_for_recipient(
             message.content.len(),
             recipient_devices.len(),
         )?;
-        
+
         // Validate device IDs match
         let envelope_device_ids: Vec<i32> = message.content.iter().map(|e| e.to).collect();
         crate::messaging::envelope::validate_device_ids(&envelope_device_ids, &recipient_devices)?;
-        
+
         let mut did_to_notif: Vec<i32> = Vec::with_capacity(message.content.len());
 
         for entry in &message.content {
@@ -152,23 +152,23 @@ impl MessagingService {
         recipient_actor_id: &str,
     ) -> Result<(), AppError> {
         // FIXME AI generated. Needs to be fixed.
-        
+
         // 1. Fetch remote actor to get inbox URL
         // let remote_actor = crate::activitypub::client::fetch_actor(recipient_actor_id).await?;
-        
+
         // 2. Validate remote actor has devices (for device count validation)
         // let remote_devices = DeviceService::get_remote_device_count(&remote_actor).await?;
         // crate::messaging::envelope::validate_envelope_for_recipient(
         //     activity.object.content.len(),
         //     remote_devices,
         // )?;
-        
+
         // 3. Send via ActivityPub client (or queue for async delivery)
         // let ap_client = crate::activitypub::client::ActivityPubClient::new(
         //     state.domain.to_string()
         // );
         // ap_client.post_to_inbox(&remote_actor.inbox, activity).await?;
-        
+
         // OR maybe we queue for delivery worker so it can retry
         // state.delivery_queue.enqueue(DeliveryJob {
         //     activity: activity.clone(),
@@ -176,8 +176,11 @@ impl MessagingService {
         //     attempts: 0,
         //     next_retry: Utc::now(),
         // }).await?;
-        
-        tracing::info!("Remote delivery to {} not yet implemented", recipient_actor_id);
+
+        tracing::info!(
+            "Remote delivery to {} not yet implemented",
+            recipient_actor_id
+        );
         let _ = (state, activity); // Suppress unused warnings for now
         Ok(())
     }

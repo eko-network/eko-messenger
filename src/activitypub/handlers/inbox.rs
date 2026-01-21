@@ -5,10 +5,11 @@ use crate::{
     errors::AppError,
 };
 use axum::{
-    Json, debug_handler,
+    Json,
+    body::Bytes,
+    debug_handler,
     extract::{Extension, State},
     http::{HeaderMap, StatusCode},
-    body::Bytes,
 };
 use std::sync::Arc;
 use tracing::info;
@@ -64,7 +65,7 @@ pub async fn post_to_inbox(
     body: Bytes,
 ) -> Result<StatusCode, AppError> {
     // FIXME AI generated. Needs to be fixed.
-    
+
     // Verify HTTP signature from remote server
     // let remote_actor = crate::activitypub::validation::verify_http_signature(
     //     &headers,
@@ -72,17 +73,17 @@ pub async fn post_to_inbox(
     //     request_path,
     //     &body,
     // ).await?;
-    
+
     // Parse the activity
     // let activity: Value = serde_json::from_slice(&body)?;
-    
+
     // Validate activity structure
     // crate::activitypub::validation::validate_activity(&activity)?;
-    
+
     // Check if local user exists
     // let recipient_uid = extract_uid_from_path()?;
     // let recipient = state.storage.actors.get_by_uid(&recipient_uid).await?;
-    
+
     // Route based on activity type
     // match activity.get("type").and_then(|t| t.as_str()) {
     //     Some("Create") => {
@@ -101,7 +102,7 @@ pub async fn post_to_inbox(
     //     }
     //     _ => return Err(AppError::BadRequest("Unsupported activity type".into()))
     // }
-    
+
     let _ = (state, headers, body); // Suppress unused warnings
     tracing::info!("POST to inbox not yet implemented");
     Ok(StatusCode::ACCEPTED)

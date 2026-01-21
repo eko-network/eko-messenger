@@ -11,15 +11,15 @@ pub fn verify_http_signature(
 ) -> Result<String, AppError> {
     // TODO we will need to implement HTTP Signature verification
     // https://swicg.github.io/activitypub-http-signature/
-    
+
     tracing::warn!("HTTP signature verification not yet implemented");
-    
+
     // Check if Signature header exists
     if let Some(signature_header) = headers.get("signature") {
         tracing::debug!("Signature header present: {:?}", signature_header);
         // TODO Parse and verify
     }
-    
+
     // For now we'll just return a placeholder
     Ok("unknown".to_string())
 }
@@ -29,7 +29,9 @@ pub fn extract_actor_from_signature(signature_header: &str) -> Result<String, Ap
     // TODO: Parse keyId from signature header
     // Format: keyId="https://example.com/users/alice#main-key"
     // Should extract: https://example.com/users/alice
-    
+
     tracing::debug!("Extracting actor from signature: {}", signature_header);
-    Err(AppError::BadRequest("Signature parsing not implemented".to_string()))
+    Err(AppError::BadRequest(
+        "Signature parsing not implemented".to_string(),
+    ))
 }

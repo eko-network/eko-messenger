@@ -1,9 +1,9 @@
+use crate::storage::Storage;
 use crate::storage::postgres::PostgresNotificationStore;
 use crate::storage::postgres::{
     actors::PostgresActorStore, devices::PostgresDeviceStore, inbox::PostgresInboxStore,
     outbox::PostgresOutboxStore, users::PostgresUserStore,
 };
-use crate::storage::Storage;
 use sqlx::PgPool;
 use std::sync::Arc;
 

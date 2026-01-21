@@ -37,7 +37,7 @@ pub fn generate_create(
     content: Vec<u8>,
 ) -> CreateActivity<NoId> {
     use super::eko_types::EncryptedMessageEntry;
-    
+
     CreateActivity {
         context: default_context_value(),
         type_field: "Create".to_string(),
