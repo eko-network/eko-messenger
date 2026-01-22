@@ -18,6 +18,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use std::collections::HashSet;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use tracing::{debug, info, warn};
@@ -29,10 +30,31 @@ pub async fn post_to_outbox(
     Extension(_claims): Extension<Arc<Claims>>,
     Json(payload): Json<CreateActivity<NoId>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // TODO: message verification
+    let recipient_actor_id = &payload.object.to[0];
+    let recipient_uid = actor_uid(recipient_actor_id)?;
+
+    // verify device list
+    let incoming_dids: HashSet<i32> = payload
+        .object
+        .content
+        .iter()
+        .map(|entry| entry.to)
+        .collect();
+    let master_dids: HashSet<i32> = state
+        .storage
+        .devices
+        .get_dids_for_user(&recipient_uid)
+        .await?
+        .into_iter()
+        .collect();
+    if incoming_dids != master_dids {
+        return Err(AppError::BadRequest("device_list_mismatch".to_string()));
+    }
+
     // These are now unused
     let message_id = format!("https://{}/messages/{}", &state.domain, Uuid::new_v4());
     let activity_id = format!("https://{}/activities/{}", &state.domain, Uuid::new_v4());
+
     let payload = CreateActivity {
         context: payload.context,
         type_field: payload.type_field,
@@ -44,7 +66,7 @@ pub async fn post_to_outbox(
             id: WithId(message_id),
             content: payload.object.content,
             attributed_to: payload.object.attributed_to,
-            to: payload.object.to,
+            to: vec![recipient_actor_id.clone()],
         },
     };
     let _stored = StoredOutboxActivity {
@@ -55,81 +77,72 @@ pub async fn post_to_outbox(
         created_at: OffsetDateTime::now_utc(),
     };
 
-    // TODO: do we verify the outbox activity (make sure it has all the devices, etc) here?
-    // or in the insert_inbox_entry function probably instead? so all inserts only succeed if valid?
+    // If receipient in our server, put entry directly in inbox (can also make a combined function?)
+    // if state
+    //     .storage
+    //     .actors
+    //     .is_local_actor(recipient_actor_id)
+    //     .await?
+    // {
+    let mut did_to_notif: Vec<i32> = Vec::with_capacity(payload.object.content.len());
+    for entry in &payload.object.content {
+        info!("SEND for {}, {}", recipient_actor_id, entry.to);
 
-    //This maybe shouldn't be a loop, group messages are differernt
-    for recipient_actor_id in &payload.object.to {
-        // If receipient in our server, put entry directly in inbox (can also make a combined function?)
-        // if state
-        //     .storage
-        //     .actors
-        //     .is_local_actor(recipient_actor_id)
-        //     .await?
-        // {
-        let mut did_to_notif: Vec<i32> = Vec::with_capacity(payload.object.content.len());
-        for entry in &payload.object.content {
-            info!("SEND for {}, {}", recipient_actor_id, entry.to);
+        // Check if the recipient is online via WebSocket
+        if let Some(sender) = state
+            .sockets
+            .get(&(actor_uid(recipient_actor_id)?, entry.to))
+        {
+            debug!(
+                "{} - {} online, trying to send via socket",
+                recipient_actor_id, entry.to
+            );
+            // Client is online - push directly via WebSocket
+            let message = generate_create(
+                recipient_actor_id.clone(),
+                payload.actor.clone(),
+                entry.to,
+                entry.from,
+                entry.content.clone(),
+            );
 
-            // Check if the recipient is online via WebSocket
-            if let Some(sender) = state
-                .sockets
-                .get(&(actor_uid(recipient_actor_id)?, entry.to))
-            {
-                debug!(
-                    "{} - {} online, trying to send via socket",
-                    recipient_actor_id, entry.to
+            let message_json = serde_json::to_string(&message)?;
+
+            if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
+                warn!(
+                    "Failed to send to online client {}, falling back to inbox: {}",
+                    recipient_actor_id, e
                 );
-                // Client is online - push directly via WebSocket
-                let message = generate_create(
-                    recipient_actor_id.clone(),
-                    payload.actor.clone(),
-                    entry.to,
-                    entry.from,
-                    entry.content.clone(),
-                );
-
-                let message_json = serde_json::to_string(&message)?;
-
-                if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
-                    warn!(
-                        "Failed to send to online client {}, falling back to inbox: {}",
-                        recipient_actor_id, e
-                    );
-                // Fall through to insert in inbox
-                } else {
-                    continue;
-                }
+            // Fall through to insert in inbox
+            } else {
+                continue;
             }
-
-            // Client is offline or WebSocket send failed, insert into inbox
-            state
-                .storage
-                .inbox
-                .insert_inbox_entry(
-                    recipient_actor_id,
-                    entry.to,
-                    StoredInboxEntry {
-                        actor_id: payload.actor.clone(),
-                        from_did: entry.from,
-                        content: entry.content.clone(),
-                    },
-                )
-                .await?;
-            // Only notify an offline device
-            did_to_notif.push(entry.to);
         }
-        state.notification_service.notify(&did_to_notif).await?
-        // } else {
-        //     info!("Forign id {}", recipient_actor_id);
-        //     // Save activity
-        //     state.storage.outbox.insert_activity(&stored).await?;
-        //     // TODO: federate the message. im thinking we need to do the following:
-        //     // - Resolve recipient inbox URL (WebFinger/actor fetch), then enqueue some delivery job keyed by (activity_id, target_inbox_url) for retries & idempotency.
-        //     // - The delivery worker signs and POSTs the activity to the remote inbox.
-        //     // - Need to figure out what we want to do for activity storage. I guess keep it in there until successful response from server?
-        // }
+
+        // Client is offline or WebSocket send failed, insert into inbox
+        state
+            .storage
+            .inbox
+            .insert_inbox_entry(
+                recipient_actor_id,
+                entry.to,
+                StoredInboxEntry {
+                    actor_id: payload.actor.clone(),
+                    from_did: entry.from,
+                    content: entry.content.clone(),
+                },
+            )
+            .await?;
+
+        // Only notify an offline device
+        did_to_notif.push(entry.to);
     }
+    state.notification_service.notify(&did_to_notif).await?;
+
+    // TODO: federate the message. im thinking we need to do the following:
+    // - Resolve recipient inbox URL (WebFinger/actor fetch), then enqueue some delivery job keyed by (activity_id, target_inbox_url) for retries & idempotency.
+    // - The delivery worker signs and POSTs the activity to the remote inbox.
+    // - Need to figure out what we want to do for activity storage. I guess keep it in there until successful response from server?
 
     Ok((StatusCode::CREATED, Json(payload)).into_response())
 }

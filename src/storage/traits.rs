@@ -39,6 +39,8 @@ pub trait OutboxStore: Send + Sync {
 pub trait DeviceStore: Send + Sync {
     async fn key_bundles_for_user(&self, uid: &str) -> Result<Vec<PreKeyBundle>, AppError>;
 
+    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<i32>, AppError>;
+
     async fn register_device(
         &self,
         uid: &str,
