@@ -171,14 +171,17 @@ Upon receiving a `Take` activity, the server SHOULD:
   ],
   "type": "RevokeDevice",
   "id": "https://eko.network/user/devices/actions/<id>",
-  "did": 0,
+  "did": "urn:uuid:<uuid>",
   "prev": "<hash of previous node>",
-  "signatures": {
-    "<signerDid>": "<singature on all other fields>"
-  }
+  "signatures": [
+    {
+      "did": "urn:uuid:<uuid>",
+      "signature": "<singature on all other fields>"
+    }
+  ]
 }
 ```
-To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove the signatures field and format the remaining node in compliance with RFC 8785, signing with their identityKey.
+To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove both the signatures field and the id field, then format the remaining node in compliance with RFC 8785, signing with their identityKey.
 
 #### KeyPackages
 
