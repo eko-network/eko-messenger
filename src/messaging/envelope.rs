@@ -8,10 +8,12 @@ pub fn validate_envelope_for_recipient(
 ) -> Result<(), AppError> {
     // One message per device
     if envelope_message_count != recipient_device_count {
-        return Err(AppError::BadRequest(format!(
+        tracing::debug!(
             "Device count mismatch: expected {} devices, got {} messages",
-            recipient_device_count, envelope_message_count
-        )));
+            recipient_device_count,
+            envelope_message_count
+        );
+        return Err(AppError::BadRequest("device_list_mismatch".to_string()));
     }
 
     Ok(())
@@ -29,18 +31,15 @@ pub fn validate_device_ids(
     // Check that all device IDs in envelope are valid
     for device_id in envelope_device_ids {
         if !recipient_set.contains(&device_id) {
-            return Err(AppError::BadRequest(format!(
-                "Unknown device ID: {}",
-                device_id
-            )));
+            tracing::debug!("Unknown device ID: {}", device_id);
+            return Err(AppError::BadRequest("device_list_mismatch".to_string()));
         }
     }
 
     // Check that all recipient devices are included
     if envelope_set.len() != recipient_set.len() {
-        return Err(AppError::BadRequest(
-            "Not all recipient devices included in message".to_string(),
-        ));
+        tracing::debug!("Not all recipient devices included in message");
+        return Err(AppError::BadRequest("device_list_mismatch".to_string()));
     }
 
     Ok(())
