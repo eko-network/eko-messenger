@@ -1,8 +1,10 @@
 pub mod activitypub;
 pub mod auth;
 pub mod config;
-pub mod crypto;
+pub mod devices;
 pub mod errors;
+pub mod groups;
+pub mod messaging;
 pub mod middleware;
 pub mod notifications;
 pub mod storage;
@@ -10,17 +12,15 @@ pub mod websocket;
 
 use crate::{
     activitypub::{
-        Person,
-        capabilities::{NOTIF_URL, SOCKET_URL},
-        capabilities_handler, get_inbox, post_to_outbox, webfinger_handler,
+        actor_handler, capabilities_handler, get_inbox, get_key_bundles,
+        handlers::capabilities::{NOTIF_URL, SOCKET_URL},
+        post_to_outbox, webfinger_handler,
     },
     auth::{
         Auth, FirebaseAuth, LocalIdentityProvider, login_handler, logout_handler,
         refresh_token_handler, signup_handler,
     },
     config::storage_config,
-    crypto::get_bundle,
-    errors::AppError,
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
@@ -29,8 +29,7 @@ use crate::{
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
-    extract::{Path, State},
-    response::{Html, Json},
+    response::Html,
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
@@ -59,7 +58,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route(&format!("{}/register", NOTIF_URL), post(register_handler))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
-        .route("/users/{uid}/keys/bundle.json", get(get_bundle))
+        .route("/users/{uid}/keys/bundle.json", get(get_key_bundles))
         .route(SOCKET_URL, get(ws_handler))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
@@ -159,12 +158,4 @@ async fn root_handler() -> Html<&'static str> {
         </body>
         </html>
     ")
-}
-
-async fn actor_handler(
-    State(state): State<AppState>,
-    Path(uid): Path<String>,
-) -> Result<Json<Person>, AppError> {
-    let actor = state.auth.provider.person_from_uid(&uid).await?;
-    Ok(Json(actor))
 }

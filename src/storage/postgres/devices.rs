@@ -228,15 +228,12 @@ impl DeviceStore for PostgresDeviceStore {
     }
 
     async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<i32>, AppError> {
-        let dids = sqlx::query!(
-            "SELECT did FROM devices WHERE uid = $1",
-            uid
-        )
-        .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .map(|r| r.did)
-        .collect();
+        let dids = sqlx::query!("SELECT did FROM devices WHERE uid = $1", uid)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|r| r.did)
+            .collect();
 
         Ok(dids)
     }
