@@ -13,9 +13,9 @@ impl DeviceService {
     }
 
     /// List all device IDs for a user
-    pub async fn list_device_ids(state: &AppState, uid: &str) -> Result<Vec<i32>, AppError> {
+    pub async fn list_device_ids(state: &AppState, uid: &str) -> Result<Vec<String>, AppError> {
         let bundles = Self::get_key_bundles_for_user(state, uid).await?;
-        Ok(bundles.iter().map(|b| b.did).collect())
+        Ok(bundles.iter().map(|b| b.did.clone()).collect())
     }
 
     // TODO the rest of the device functions like add, remove, validation

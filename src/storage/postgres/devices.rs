@@ -91,20 +91,21 @@ impl DeviceStore for PostgresDeviceStore {
     ) -> Result<RegisterDeviceResult, AppError> {
         let mut tx = self.pool.begin().await?;
 
-        let did = sqlx::query!(
+        let did = Uuid::new_v4().to_string();
+
+        sqlx::query!(
             r#"
-            INSERT INTO devices (uid, name, identity_key, registration_id)
-            VALUES ($1, $2, $3, $4)
-            RETURNING did
+            INSERT INTO devices (did, uid, name, identity_key, registration_id)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
+            did,
             uid,
             device_name,
             identity_key,
             registration_id
         )
-        .fetch_one(&mut *tx)
-        .await?
-        .did;
+        .execute(&mut *tx)
+        .await?;
 
         let refresh_token = sqlx::query!(
             r#"
@@ -227,7 +228,7 @@ impl DeviceStore for PostgresDeviceStore {
         Ok(())
     }
 
-    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<i32>, AppError> {
+    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<String>, AppError> {
         let dids = sqlx::query!("SELECT did FROM devices WHERE uid = $1", uid)
             .fetch_all(&self.pool)
             .await?

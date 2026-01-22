@@ -68,7 +68,7 @@ pub struct SignupRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
     pub uid: String,
-    pub did: i32,
+    pub did: String,
     pub access_token: String,
     pub refresh_token: Uuid,
     pub expires_at: String,
@@ -154,7 +154,7 @@ impl Auth {
 
         let access_token = self
             .jwt_helper
-            .create_jwt(&uid, register.did)
+            .create_jwt(&uid, &register.did)
             .map_err(|e| anyhow::anyhow!(e))?;
 
         let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
@@ -185,7 +185,7 @@ impl Auth {
 
         match result {
             Some(rotated) => {
-                let access_token = self.jwt_helper.create_jwt(&rotated.uid, rotated.did)?;
+                let access_token = self.jwt_helper.create_jwt(&rotated.uid, &rotated.did)?;
                 let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
                 Ok(Json(RefreshResponse {
                     access_token,

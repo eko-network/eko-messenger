@@ -11,7 +11,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int4",
+        "Text",
         "Text",
         "Text",
         "Timestamptz"

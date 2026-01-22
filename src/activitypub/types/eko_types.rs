@@ -22,8 +22,8 @@ pub struct EncryptedMessage<Id> {
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedMessageEntry {
-    pub to: i32,
-    pub from: i32,
+    pub to: String,
+    pub from: String,
     #[serde_as(as = "Base64")]
     pub content: Vec<u8>,
 }
@@ -33,7 +33,7 @@ pub struct EncryptedMessageEntry {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreKeyBundle {
-    pub did: i32,
+    pub did: String,
     #[serde_as(as = "Base64")]
     pub identity_key: Vec<u8>,
     pub registration_id: i32,

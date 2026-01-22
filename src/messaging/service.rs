@@ -57,10 +57,11 @@ impl MessagingService {
         )?;
 
         // Validate device IDs match
-        let envelope_device_ids: Vec<i32> = message.content.iter().map(|e| e.to).collect();
+        let envelope_device_ids: Vec<String> =
+            message.content.iter().map(|e| e.to.clone()).collect();
         crate::messaging::envelope::validate_device_ids(&envelope_device_ids, &recipient_devices)?;
 
-        let mut did_to_notif: Vec<i32> = Vec::with_capacity(message.content.len());
+        let mut did_to_notif: Vec<String> = Vec::with_capacity(message.content.len());
 
         for entry in &message.content {
             info!("SEND for {}, {}", recipient_actor_id, entry.to);
@@ -79,17 +80,17 @@ impl MessagingService {
                 .inbox
                 .insert_inbox_entry(
                     recipient_actor_id,
-                    entry.to,
+                    &entry.to,
                     StoredInboxEntry {
                         actor_id: sender_actor.to_string(),
-                        from_did: entry.from,
+                        from_did: entry.from.clone(),
                         content: entry.content.clone(),
                     },
                 )
                 .await?;
 
             // Queue for push notification
-            did_to_notif.push(entry.to);
+            did_to_notif.push(entry.to.clone());
         }
 
         // Send push notifications for offline devices
@@ -112,7 +113,7 @@ impl MessagingService {
         // Check if the recipient device is online
         if let Some(sender) = state
             .sockets
-            .get(&(actor_uid(recipient_actor_id)?, entry.to))
+            .get(&(actor_uid(recipient_actor_id)?, entry.to.clone()))
         {
             debug!(
                 "{} - {} online, trying to send via socket",
@@ -123,8 +124,8 @@ impl MessagingService {
             let ws_message = generate_create(
                 recipient_actor_id.to_string(),
                 sender_actor.to_string(),
-                entry.to,
-                entry.from,
+                entry.to.clone(),
+                entry.from.clone(),
                 entry.content.clone(),
             );
 

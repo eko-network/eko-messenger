@@ -16,13 +16,13 @@
       {
         "ordinal": 2,
         "name": "from_did",
-        "type_info": "Int4"
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
         "Text",
-        "Int4"
+        "Text"
       ]
     },
     "nullable": [

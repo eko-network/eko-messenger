@@ -20,7 +20,7 @@ impl InboxStore for PostgresInboxStore {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-        did: i32,
+        did: &str,
     ) -> Result<Vec<StoredInboxEntry>, AppError> {
         let rows = sqlx::query!(
             r#"
@@ -47,7 +47,7 @@ impl InboxStore for PostgresInboxStore {
     async fn insert_inbox_entry(
         &self,
         inbox_actor_id: &str,
-        to_did: i32,
+        to_did: &str,
         entry: StoredInboxEntry,
     ) -> Result<(), AppError> {
         sqlx::query!(

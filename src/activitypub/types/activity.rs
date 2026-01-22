@@ -32,8 +32,8 @@ pub struct CreateActivity<Id> {
 pub fn generate_create(
     to_actor: String,
     from_actor: String,
-    to_did: i32,
-    from_did: i32,
+    to_did: String,
+    from_did: String,
     content: Vec<u8>,
 ) -> CreateActivity<NoId> {
     use super::eko_types::EncryptedMessageEntry;

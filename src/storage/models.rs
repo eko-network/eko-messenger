@@ -13,7 +13,7 @@ pub struct StoredActivity {
 #[derive(Debug, Clone)]
 pub struct StoredInboxEntry {
     pub actor_id: String,
-    pub from_did: i32,
+    pub from_did: String,
     pub content: Vec<u8>,
 }
 
@@ -28,7 +28,7 @@ pub struct StoredOutboxActivity {
 
 #[derive(Debug, Clone)]
 pub struct RegisterDeviceResult {
-    pub did: i32,
+    pub did: String,
     pub refresh_token: Uuid,
 }
 
@@ -36,7 +36,7 @@ pub struct RegisterDeviceResult {
 pub struct RotatedRefreshToken {
     pub refresh_token: Uuid,
     pub uid: String,
-    pub did: i32,
+    pub did: String,
     pub expires_at: OffsetDateTime,
 }
 

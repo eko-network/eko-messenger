@@ -27,14 +27,14 @@ impl NotificationService {
             public_key,
         })
     }
-    pub async fn register(&self, did: i32, endpoint: &SubscriptionInfo) -> Result<(), AppError> {
+    pub async fn register(&self, did: &str, endpoint: &SubscriptionInfo) -> Result<(), AppError> {
         self.storage
             .notifications
             .upsert_endpoint(did, endpoint)
             .await?;
         Ok(())
     }
-    pub async fn notify(&self, dids: &[i32]) -> Result<(), AppError> {
+    pub async fn notify(&self, dids: &[String]) -> Result<(), AppError> {
         let endpoints = self.storage.notifications.retrive_endpoints(dids).await?;
         join_all(endpoints.into_iter().map(|sub| {
             let client = self.client.clone();

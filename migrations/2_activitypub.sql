@@ -17,7 +17,7 @@ CREATE TABLE inbox_entries (
     id SERIAL PRIMARY KEY,
     actor_id TEXT NOT NULL REFERENCES actors(id) ON DELETE CASCADE,
     inbox_actor_id TEXT NOT NULL REFERENCES actors(id) ON DELETE CASCADE,
-		from_did INTEGER NOT NULL,
-		to_did INTEGER NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
-		content BYTEA NOT NULL
+	from_did TEXT NOT NULL,
+	to_did TEXT NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
+	content BYTEA NOT NULL
 );

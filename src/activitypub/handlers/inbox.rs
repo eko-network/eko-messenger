@@ -22,7 +22,7 @@ pub async fn get_inbox(
     Extension(claims): Extension<Arc<Claims>>,
 ) -> Result<Json<Vec<CreateActivity<NoId>>>, AppError> {
     let uid = &claims.sub;
-    let did = claims.did;
+    let did = &claims.did;
     let actor_id = actor_url(&state.domain, uid);
 
     // TODO check to see if the actor url is NOT local
@@ -46,7 +46,7 @@ pub async fn get_inbox(
                 generate_create(
                     actor_id.clone(),
                     i.actor_id.clone(),
-                    did,
+                    did.clone(),
                     i.from_did,
                     i.content,
                 )

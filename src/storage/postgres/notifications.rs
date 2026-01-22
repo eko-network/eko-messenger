@@ -15,7 +15,11 @@ impl PostgresNotificationStore {
 }
 #[async_trait]
 impl NotificationStore for PostgresNotificationStore {
-    async fn upsert_endpoint(&self, did: i32, endpoint: &SubscriptionInfo) -> Result<(), AppError> {
+    async fn upsert_endpoint(
+        &self,
+        did: &str,
+        endpoint: &SubscriptionInfo,
+    ) -> Result<(), AppError> {
         sqlx::query!(
             r#"
             INSERT INTO notifications (did, endpoint, p256dh, auth)
@@ -34,7 +38,7 @@ impl NotificationStore for PostgresNotificationStore {
 
         Ok(())
     }
-    async fn retrive_endpoints(&self, dids: &[i32]) -> Result<Vec<SubscriptionInfo>, AppError> {
+    async fn retrive_endpoints(&self, dids: &[String]) -> Result<Vec<SubscriptionInfo>, AppError> {
         let rows = sqlx::query!(
             r#"
             SELECT endpoint, p256dh, auth from notifications WHERE did = ANY($1)

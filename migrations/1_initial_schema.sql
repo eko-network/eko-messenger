@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE devices (
-    did SERIAL PRIMARY KEY,
+    did TEXT PRIMARY KEY,
     uid TEXT NOT NULL,
     name TEXT NOT NULL,
     identity_key BYTEA NOT NULL,
@@ -9,8 +9,8 @@ CREATE TABLE devices (
 );
 
 CREATE TABLE refresh_tokens (
-		token UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    did SERIAL NOT NULL UNIQUE REFERENCES devices(did) ON DELETE CASCADE,
+	token UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    did TEXT NOT NULL UNIQUE REFERENCES devices(did) ON DELETE CASCADE,
     ip_address TEXT NOT NULL,
     user_agent TEXT NOT NULL,
     issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -20,14 +20,14 @@ CREATE TABLE refresh_tokens (
 
 CREATE TABLE pre_keys (
     id SERIAL PRIMARY KEY,
-    did SERIAL NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
+    did TEXT NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
     key_id INTEGER NOT NULL,
     key BYTEA NOT NULL,
     UNIQUE (did, key_id)
 );
 
 CREATE TABLE signed_pre_keys (
-    did SERIAL NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
+    did TEXT NOT NULL REFERENCES devices(did) ON DELETE CASCADE,
     key_id INTEGER NOT NULL,
     key BYTEA NOT NULL,
     signature BYTEA NOT NULL,

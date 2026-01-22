@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
-pub type WebSockets = Arc<DashMap<(String, i32), WsSender>>;
+pub type WebSockets = Arc<DashMap<(String, String), WsSender>>;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -37,14 +37,14 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
     );
     state
         .sockets
-        .insert((claims.sub.clone(), claims.did), tx.clone());
+        .insert((claims.sub.clone(), claims.did.clone()), tx.clone());
 
     // Send messages from inbox to client
     let actor_id = actor_url(&state.domain, &claims.sub);
     match state
         .storage
         .inbox
-        .inbox_activities(&actor_id, claims.did)
+        .inbox_activities(&actor_id, &claims.did)
         .await
     {
         Ok(inbox_items) => {
@@ -52,7 +52,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
                 let message = generate_create(
                     actor_id.clone(),
                     item.actor_id,
-                    claims.did,
+                    claims.did.clone(),
                     item.from_did,
                     item.content,
                 );
@@ -100,6 +100,8 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
             else => break,
         }
     }
-    state.sockets.remove(&(claims.sub.clone(), claims.did));
+    state
+        .sockets
+        .remove(&(claims.sub.clone(), claims.did.clone()));
     info!("Client {} - {} disconnected", claims.sub, claims.did);
 }

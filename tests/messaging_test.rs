@@ -20,7 +20,7 @@ async fn test_send_and_receive_message_to_self() {
     let message_content = "test message to self".to_string();
 
     let encrypted_message_entry = EncryptedMessageEntry {
-        to: did,
+        to: did.clone(),
         from: did,
         content: message_content.as_bytes().to_vec(),
     };

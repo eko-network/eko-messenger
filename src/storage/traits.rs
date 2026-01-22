@@ -15,14 +15,14 @@ pub trait InboxStore: Send + Sync {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-        did: i32,
+        did: &str,
     ) -> Result<Vec<StoredInboxEntry>, AppError>;
 
     /// Links an inbox to an existing stored activity.
     async fn insert_inbox_entry(
         &self,
         inbox_actor_id: &str,
-        to_did: i32,
+        to_did: &str,
         entry: StoredInboxEntry,
     ) -> Result<(), AppError>;
 }
@@ -39,7 +39,7 @@ pub trait OutboxStore: Send + Sync {
 pub trait DeviceStore: Send + Sync {
     async fn key_bundles_for_user(&self, uid: &str) -> Result<Vec<PreKeyBundle>, AppError>;
 
-    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<i32>, AppError>;
+    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<String>, AppError>;
 
     async fn register_device(
         &self,
@@ -82,12 +82,12 @@ pub trait ActorStore: Send + Sync {
 pub trait NotificationStore: Send + Sync {
     async fn upsert_endpoint(
         &self,
-        did: i32,
+        did: &str,
         endpoint: &web_push::SubscriptionInfo,
     ) -> Result<(), AppError>;
     async fn retrive_endpoints(
         &self,
-        dids: &[i32],
+        dids: &[String],
     ) -> Result<Vec<web_push::SubscriptionInfo>, AppError>;
 }
 

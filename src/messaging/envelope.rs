@@ -21,8 +21,8 @@ pub fn validate_envelope_for_recipient(
 
 /// Validates that all device IDs in the envelope match the recipient's devices
 pub fn validate_device_ids(
-    envelope_device_ids: &[i32],
-    recipient_device_ids: &[i32],
+    envelope_device_ids: &[String],
+    recipient_device_ids: &[String],
 ) -> Result<(), AppError> {
     // Convert to sets for comparison
     let envelope_set: std::collections::HashSet<_> = envelope_device_ids.iter().collect();
