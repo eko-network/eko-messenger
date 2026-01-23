@@ -56,7 +56,6 @@ Example: `KeyPackage` object
   "type": "KeyPackage",
   "id": "https://eko.network/user/user1/keyPackage/A",
   "deviceId": "<device-id>",
-  "registrationId": 1,
   "preKeyId": 1,
   "preKey": "base64-encoded",
   "signedPreKeyId": 1,
@@ -155,9 +154,14 @@ Upon receiving a `Take` activity, the server SHOULD:
   "prev": "<hash of previous node or null if first node>",
   "did": 0,
   "eko:keyPackage": "https://eko.network/user/user1/keyPackage",
-  "publicKey": "<device publicKey>",
-  "signatures": {
-    "<signerDid>": "<singature on all other fields>"
+  "identityKey": "<device publicKey>",
+  "registrationId": 1,
+  "proof": {
+    "type": "DataIntegrityProof",
+    "cryptosuite": "xeddsa-2022",
+    "verificationMethod": "did:eko:asdasd",
+    "proofPurpose": "Authentication",
+    "proof_value": "z....",
   }
 }
 ```
@@ -173,15 +177,16 @@ Upon receiving a `Take` activity, the server SHOULD:
   "id": "https://eko.network/user/devices/actions/<id>",
   "did": "urn:uuid:<uuid>",
   "prev": "<hash of previous node>",
-  "signatures": [
-    {
-      "did": "urn:uuid:<uuid>",
-      "signature": "<singature on all other fields>"
-    }
-  ]
+  "proof": {
+    "type": "DataIntegrityProof",
+    "cryptosuite": "xeddsa-2022",
+    "verificationMethod": "did:eko:asdasd",
+    "proofPurpose": "Authentication",
+    "proof_value": "z....",
+  }
 }
 ```
-To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove both the signatures field and the id field, then format the remaining node in compliance with RFC 8785, signing with their identityKey.
+To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove both the proof field and the id field, then format the remaining node in compliance with RFC 8785, signing with their identity key.
 
 #### KeyPackages
 
