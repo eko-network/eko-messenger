@@ -1,4 +1,4 @@
-use crate::{errors::AppError, server_address};
+use crate::errors::AppError;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -24,8 +24,8 @@ impl DeviceId {
     }
 
     /// Convert to public-facing URL
-    pub fn to_url(&self) -> String {
-        format!("{}/devices/{}", server_address(), self.0)
+    pub fn to_url(&self, domain: &str) -> String {
+        format!("{}/devices/{}", domain, self.0)
     }
 
     /// Parse from public URL
@@ -39,13 +39,13 @@ impl DeviceId {
     }
 
     /// Get key collection URL
-    pub fn key_collection_url(&self) -> String {
-        format!("{}/keyCollection", self.to_url())
+    pub fn key_collection_url(&self, domain: &str) -> String {
+        format!("{}/keyCollection", self.to_url(domain))
     }
 
     /// Get device action URL
-    pub fn action_url(&self, is_add: bool) -> String {
+    pub fn action_url(&self, domain: &str, is_add: bool) -> String {
         let prefix = if is_add { 'a' } else { 'r' };
-        format!("{}/deviceActions/{}{}", server_address(), prefix, self.0)
+        format!("{}/deviceActions/{}{}", domain, prefix, self.0)
     }
 }

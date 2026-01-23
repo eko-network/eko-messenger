@@ -1,5 +1,5 @@
 use eko_messenger::auth::{FirebaseAuth, IdentityProvider};
-use std::env;
+use std::{env, sync::Arc};
 use tokio;
 
 #[tokio::test]
@@ -23,9 +23,10 @@ async fn test_firebase_login_with_email() {
         }
     };
 
-    let firebase_auth = FirebaseAuth::new_from_env(reqwest::Client::new())
-        .await
-        .unwrap();
+    let firebase_auth =
+        FirebaseAuth::new_from_env(Arc::new("ex".to_string()), reqwest::Client::new())
+            .await
+            .unwrap();
 
     let result = firebase_auth.login_with_email(email, password).await;
 

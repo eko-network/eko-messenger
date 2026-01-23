@@ -23,7 +23,7 @@ pub async fn get_inbox(
 ) -> Result<Json<Vec<Activities>>, AppError> {
     let uid = &claims.sub;
     let did = claims.did;
-    let actor_id = actor_url(uid);
+    let actor_id = actor_url(&state.domain, uid);
 
     // TODO check to see if the actor url is NOT local
     info!("GET FOR {}, {}", actor_id, did);
@@ -46,7 +46,7 @@ pub async fn get_inbox(
                 Activities::Create(generate_create(
                     actor_id.clone(),
                     i.actor_id.clone(),
-                    did.to_url(),
+                    did.to_url(&state.domain),
                     i.from_did,
                     i.content,
                 ))

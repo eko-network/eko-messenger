@@ -7,11 +7,11 @@ use serde_json::Value;
 use std::env;
 use std::sync::Arc;
 
-async fn get_auth_service(storage: Arc<Storage>) -> Auth {
-    let firebase_auth = FirebaseAuth::new_from_env(reqwest::Client::new())
+async fn get_auth_service(domain: Arc<String>, storage: Arc<Storage>) -> Auth {
+    let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), reqwest::Client::new())
         .await
         .unwrap();
-    Auth::new(firebase_auth, storage)
+    Auth::new(domain, firebase_auth, storage)
 }
 
 #[tokio::test]
@@ -24,7 +24,7 @@ async fn test_login_and_verify_token() {
     let password = env::var("TEST_USER_PASSWORD").expect("TEST_USER_PASSWORD not set");
 
     let app = spawn_app().await;
-    let auth = get_auth_service(app.storage.clone()).await;
+    let auth = get_auth_service(app.domain, app.storage.clone()).await;
 
     let login_req = generate_login_request(email, password);
 
@@ -50,7 +50,7 @@ async fn test_refresh_token() {
     let password = env::var("TEST_USER_PASSWORD").expect("TEST_USER_PASSWORD not set");
 
     let app = spawn_app().await;
-    let auth = get_auth_service(app.storage.clone()).await;
+    let auth = get_auth_service(app.domain, app.storage.clone()).await;
 
     let login_req = generate_login_request(email, password);
 
@@ -82,7 +82,7 @@ async fn test_logout() {
     let password = env::var("TEST_USER_PASSWORD").expect("TEST_USER_PASSWORD not set");
 
     let app = spawn_app().await;
-    let auth = get_auth_service(app.storage.clone()).await;
+    let auth = get_auth_service(app.domain, app.storage.clone()).await;
 
     let login_req = generate_login_request(email, password);
 
@@ -133,7 +133,7 @@ async fn test_http_login() {
     let login_json: Value = serde_json::from_str(&login_body).unwrap();
     let access_token = login_json["accessToken"].as_str().unwrap();
 
-    let auth_service = get_auth_service(app.storage.clone()).await;
+    let auth_service = get_auth_service(app.domain, app.storage.clone()).await;
     let claims = auth_service.verify_access_token(access_token).unwrap();
     assert!(!claims.sub.is_empty());
 }

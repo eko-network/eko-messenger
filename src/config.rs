@@ -1,7 +1,7 @@
 use crate::storage::{Storage, postgres::connection::postgres_storage};
 use anyhow::Context;
 use sqlx::{PgPool, Postgres};
-use std::env::var;
+use std::{env::var, sync::Arc};
 use tracing::info;
 
 pub async fn db_config() -> anyhow::Result<sqlx::Pool<Postgres>> {
@@ -15,7 +15,7 @@ pub async fn db_config() -> anyhow::Result<sqlx::Pool<Postgres>> {
     Ok(pool)
 }
 
-pub async fn storage_config() -> anyhow::Result<Storage> {
+pub async fn storage_config(domain: Arc<String>) -> anyhow::Result<Storage> {
     // default storage choice to postgres
     let storage_backend = var("STORAGE_BACKEND").unwrap_or_else(|_| "postgres".to_string());
 
@@ -23,7 +23,7 @@ pub async fn storage_config() -> anyhow::Result<Storage> {
         "postgres" => {
             info!("Using PostgreSQL storage backend");
             let pool = db_config().await?;
-            Ok(postgres_storage(pool))
+            Ok(postgres_storage(domain, pool))
         }
         _ => {
             anyhow::bail!(

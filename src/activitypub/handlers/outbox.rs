@@ -5,7 +5,6 @@ use crate::{
     devices::DeviceId,
     errors::AppError,
     messaging::MessagingService,
-    server_address,
 };
 use axum::{
     Json, debug_handler,
@@ -44,8 +43,8 @@ pub async fn post_to_outbox(
         Activities::Create(payload) => {
             // TODO: message verification
             // These are now unused
-            let message_id = format!("https://{}/messages/{}", server_address(), Uuid::new_v4());
-            let activity_id = format!("https://{}/activities/{}", server_address(), Uuid::new_v4());
+            let message_id = format!("https://{}/messages/{}", state.domain, Uuid::new_v4());
+            let activity_id = format!("https://{}/activities/{}", state.domain, Uuid::new_v4());
             let payload = Create {
                 context: payload.context,
                 id: Some(activity_id.clone()),

@@ -16,6 +16,7 @@ use async_trait::async_trait;
 
 pub struct FirebaseAuth {
     client: reqwest::Client,
+    domain: Arc<String>,
     project_id: String,
     token_provider: Arc<dyn TokenProvider>,
 }
@@ -58,7 +59,7 @@ async fn get_token(provider: &Arc<dyn TokenProvider>) -> Result<Arc<Token>, gcp_
 }
 
 impl FirebaseAuth {
-    pub async fn new_from_env(client: reqwest::Client) -> Result<Self> {
+    pub async fn new_from_env(domain: Arc<String>, client: reqwest::Client) -> Result<Self> {
         let service_account_path = var("GOOGLE_APPLICATION_CREDENTIALS")
             .expect("GOOGLE_APPLICATION_CREDENTIALS should be set in enviroment");
 
@@ -72,6 +73,7 @@ impl FirebaseAuth {
             .to_string();
         let provider = gcp_auth::provider().await?;
         Ok(Self {
+            domain,
             project_id,
             client,
             token_provider: provider,
@@ -136,6 +138,7 @@ impl IdentityProvider for FirebaseAuth {
             .await?;
         let firestore_response: Value = response.json().await?;
         Ok(create_person(
+            &self.domain,
             uid,
             firestore_response
                 .pointer("/fields/profileData/mapValue/fields/bio/stringValue")

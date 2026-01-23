@@ -39,7 +39,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
     state.sockets.insert(claims.did, tx.clone());
 
     // Send messages from inbox to client
-    let actor_id = actor_url(&claims.sub);
+    let actor_id = actor_url(&state.domain, &claims.sub);
     match state
         .storage
         .inbox
@@ -51,7 +51,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
                 let message = generate_create(
                     actor_id.clone(),
                     item.actor_id,
-                    claims.did.to_url(),
+                    claims.did.to_url(&state.domain),
                     item.from_did,
                     item.content,
                 );

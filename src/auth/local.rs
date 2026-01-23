@@ -12,11 +12,12 @@ use uuid::Uuid;
 
 pub struct LocalIdentityProvider {
     storage: Arc<Storage>,
+    domain: Arc<String>,
 }
 
 impl LocalIdentityProvider {
-    pub fn new(storage: Arc<Storage>) -> Self {
-        Self { storage }
+    pub fn new(domain: Arc<String>, storage: Arc<Storage>) -> Self {
+        Self { storage, domain }
     }
 }
 
@@ -42,7 +43,14 @@ impl IdentityProvider for LocalIdentityProvider {
             .verify_password(password.as_bytes(), &parsed_hash)
             .map_err(|_| AppError::Unauthorized("Invalid email or password".to_string()))?;
 
-        let person = create_person(&user.uid, None, user.username.clone(), None, None);
+        let person = create_person(
+            &self.domain,
+            &user.uid,
+            None,
+            user.username.clone(),
+            None,
+            None,
+        );
 
         Ok((person, user.uid))
     }
@@ -55,7 +63,14 @@ impl IdentityProvider for LocalIdentityProvider {
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-        Ok(create_person(&user.uid, None, user.username, None, None))
+        Ok(create_person(
+            &self.domain,
+            &user.uid,
+            None,
+            user.username,
+            None,
+            None,
+        ))
     }
 
     async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {

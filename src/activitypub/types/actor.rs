@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::server_address;
-
 pub fn default_context_value() -> Value {
     Value::String(super::ACTIVITY_STREAMS_CONTEXT.to_string())
 }
@@ -27,13 +25,14 @@ pub struct Person {
 
 /// Create a new Person actor
 pub fn create_person(
+    domain: &str,
     uid: &str,
     summary: Option<String>,
     preferred_username: String,
     name: Option<String>,
     profile_picture: Option<String>,
 ) -> Person {
-    let id = actor_url(uid);
+    let id = actor_url(domain, uid);
     let inbox_url = format!("{}/inbox", id);
     let outbox_url = format!("{}/outbox", id);
     let devices_url = format!("{}/deviceActions", id);
@@ -53,8 +52,8 @@ pub fn create_person(
 }
 
 /// Generate an actor URL from domain and user ID
-pub fn actor_url(uid: &str) -> String {
-    format!("{}/users/{}", server_address(), uid)
+pub fn actor_url(domain: &str, uid: &str) -> String {
+    format!("{}/users/{}", domain, uid)
 }
 
 /// Extract user ID from an actor URL

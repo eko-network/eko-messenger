@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use async_trait::async_trait;
 use sqlx::PgPool;
@@ -19,11 +21,12 @@ use crate::{
 
 pub struct PostgresDeviceStore {
     pool: PgPool,
+    domain: Arc<String>,
 }
 
 impl PostgresDeviceStore {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(domain: Arc<String>, pool: PgPool) -> Self {
+        Self { domain, pool }
     }
 }
 
@@ -224,14 +227,14 @@ impl DeviceStore for PostgresDeviceStore {
         .into_iter()
         .map(|r| {
             let did = DeviceId::new(r.did);
-            let global_did = did.to_url();
-            let id = did.action_url(r.is_add);
+            let global_did = did.to_url(&self.domain);
+            let id = did.action_url(&self.domain,r.is_add);
             if r.is_add {
                 Ok(DeviceAction::AddDevice(AddDevice {
                     id,
                     context: default_context_value(),
                     prev: r.prev.map(|v| v.try_into()).transpose().map_err(|_| anyhow!("Invalid hash stored"))?,
-                    key_collection: did.key_collection_url(),
+                    key_collection: did.key_collection_url(&self.domain),
                     did: global_did,
                     identity_key: r.identity_key.ok_or(anyhow!("identity_key may not be null"))?,
                     registration_id: r.registration_id.ok_or(anyhow!("registration_id may not be null"))?,

@@ -38,7 +38,7 @@ use dashmap::DashMap;
 use std::{
     env::{self, var},
     net::SocketAddr,
-    sync::{Arc, OnceLock},
+    sync::Arc,
 };
 use tokio::net::TcpListener;
 use tracing::info;
@@ -46,24 +46,11 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub domain: Arc<String>,
     pub auth: Arc<Auth>,
     pub storage: Arc<Storage>,
     pub sockets: WebSockets,
     pub notification_service: Arc<NotificationService>,
-}
-
-static SERVER_ADDR: OnceLock<String> = OnceLock::new();
-
-pub fn server_address() -> &'static str {
-    SERVER_ADDR
-        .get()
-        .expect("Address must be initialized before use")
-}
-
-pub fn set_server_address(address: String) -> Result<(), String> {
-    SERVER_ADDR
-        .set(address)
-        .map_err(|_| "Server address already set".to_string())
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -106,23 +93,22 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     let ip_source = env::var("IP_SOURCE").expect("IP_SOURCE environment variable must be set");
-    let storage = Arc::new(storage_config().await?);
     let port = port_from_env();
+    let domain = Arc::new(var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port)));
+    let storage = Arc::new(storage_config(domain.clone()).await?);
 
-    let domain = var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port));
-    set_server_address(domain)?;
     let client = reqwest::Client::new();
 
     let auth_provider = var("AUTH_PROVIDER").unwrap_or_else(|_| "firebase".to_string());
 
     let auth = match auth_provider.to_lowercase().as_str() {
         "firebase" => {
-            let firebase_auth = FirebaseAuth::new_from_env(client.clone()).await?;
-            Auth::new(firebase_auth, storage.clone())
+            let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone()).await?;
+            Auth::new(domain.clone(), firebase_auth, storage.clone())
         }
         "local" => {
-            let local_auth = LocalIdentityProvider::new(storage.clone());
-            Auth::new(local_auth, storage.clone())
+            let local_auth = LocalIdentityProvider::new(domain.clone(), storage.clone());
+            Auth::new(domain.clone(), local_auth, storage.clone())
         }
         _ => return Err(anyhow::anyhow!("Invalid AUTH_PROVIDER: {}", auth_provider).into()),
     };
@@ -130,6 +116,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let notification_service = NotificationService::new(storage.clone()).await?;
 
     let app_state = AppState {
+        domain: domain,
         auth: Arc::new(auth),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
