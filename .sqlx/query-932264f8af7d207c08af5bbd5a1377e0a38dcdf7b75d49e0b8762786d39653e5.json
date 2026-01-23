@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO device_actions(is_add, did, uid, identity_key, registration_id, device_name)\n            VALUES (TRUE, $1, $2, $3, $4, $5)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "932264f8af7d207c08af5bbd5a1377e0a38dcdf7b75d49e0b8762786d39653e5"
+}

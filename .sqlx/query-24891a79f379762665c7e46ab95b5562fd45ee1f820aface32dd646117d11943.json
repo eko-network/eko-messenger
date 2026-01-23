@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT did FROM devices WHERE uid = $1",
+  "query": "\n            SELECT did FROM devices\n            WHERE uid = $1 AND is_approved = TRUE\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "did",
-        "type_info": "Text"
+        "type_info": "Uuid"
       }
     ],
     "parameters": {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "93ccd70841d1ebffc499eed64e5b939b38cb904271aed367a8c4a035a9798d33"
+  "hash": "24891a79f379762665c7e46ab95b5562fd45ee1f820aface32dd646117d11943"
 }

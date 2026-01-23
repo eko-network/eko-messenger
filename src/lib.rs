@@ -12,7 +12,7 @@ pub mod websocket;
 
 use crate::{
     activitypub::{
-        actor_handler, capabilities_handler, get_inbox, get_key_bundles,
+        actor_handler, capabilities_handler, get_devices, get_inbox,
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
         post_to_outbox, webfinger_handler,
     },
@@ -21,6 +21,7 @@ use crate::{
         refresh_token_handler, signup_handler,
     },
     config::storage_config,
+    devices::get_approval_status_handler,
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
@@ -37,7 +38,7 @@ use dashmap::DashMap;
 use std::{
     env::{self, var},
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 use tokio::net::TcpListener;
 use tracing::info;
@@ -46,10 +47,23 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<Auth>,
-    pub domain: Arc<String>,
     pub storage: Arc<Storage>,
     pub sockets: WebSockets,
     pub notification_service: Arc<NotificationService>,
+}
+
+static SERVER_ADDR: OnceLock<String> = OnceLock::new();
+
+pub fn server_address() -> &'static str {
+    SERVER_ADDR
+        .get()
+        .expect("Address must be initialized before use")
+}
+
+pub fn set_server_address(address: String) -> Result<(), String> {
+    SERVER_ADDR
+        .set(address)
+        .map_err(|_| "Server address already set".to_string())
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -58,7 +72,12 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route(&format!("{}/register", NOTIF_URL), post(register_handler))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
-        .route("/users/{uid}/keys/bundle.json", get(get_key_bundles))
+        .route("/users/{uid}/deviceActions", get(get_devices))
+        // .route("/devices/{did}/keyCollection", get())
+        .route(
+            "/devices/{did}/approval-status",
+            get(get_approval_status_handler),
+        )
         .route(SOCKET_URL, get(ws_handler))
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
@@ -91,17 +110,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let port = port_from_env();
 
     let domain = var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port));
+    set_server_address(domain)?;
     let client = reqwest::Client::new();
 
     let auth_provider = var("AUTH_PROVIDER").unwrap_or_else(|_| "firebase".to_string());
 
     let auth = match auth_provider.to_lowercase().as_str() {
         "firebase" => {
-            let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone()).await?;
+            let firebase_auth = FirebaseAuth::new_from_env(client.clone()).await?;
             Auth::new(firebase_auth, storage.clone())
         }
         "local" => {
-            let local_auth = LocalIdentityProvider::new(domain.clone(), storage.clone());
+            let local_auth = LocalIdentityProvider::new(storage.clone());
             Auth::new(local_auth, storage.clone())
         }
         _ => return Err(anyhow::anyhow!("Invalid AUTH_PROVIDER: {}", auth_provider).into()),
@@ -113,7 +133,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         auth: Arc::new(auth),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
-        domain: Arc::new(domain),
         storage,
     };
 

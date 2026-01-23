@@ -7,6 +7,7 @@ use eko_messenger::{
     },
     config::{db_config, storage_config},
     notifications::NotificationService,
+    set_server_address,
     storage::{Storage, postgres::connection::postgres_storage},
 };
 use reqwest::Client;
@@ -100,7 +101,6 @@ impl IdentityProvider for TestIdentityProvider {
     ) -> Result<eko_messenger::activitypub::Person, eko_messenger::errors::AppError> {
         use eko_messenger::activitypub::create_person;
         Ok(create_person(
-            &self.domain,
             uid,
             Some("Test user".to_string()),
             uid.to_string(),
@@ -168,6 +168,10 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
     let address = format!("http://127.0.0.1:{}", port);
     let domain = format!("http://127.0.0.1:{}", port);
 
+    // Initialize server address for tests
+    // Note: This will fail if called multiple times, but that's ok for tests
+    let _ = set_server_address(domain.clone());
+
     let storage = match options.storage {
         StorageBackend::Postgres => Arc::new(postgres_storage(postgres_pool().await)),
     };
@@ -179,7 +183,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
             Auth::new(TestIdentityProvider::new(domain.clone()), storage.clone())
         }
         IdentityBackend::Firebase => {
-            let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone())
+            let firebase_auth = FirebaseAuth::new_from_env(client.clone())
                 .await
                 .expect("Failed to create FirebaseAuth from env");
             Auth::new(firebase_auth, storage.clone())
@@ -192,7 +196,6 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
 
     let app_state = AppState {
         auth: Arc::new(auth_service),
-        domain: Arc::new(domain.clone()),
         storage: storage.clone(),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),

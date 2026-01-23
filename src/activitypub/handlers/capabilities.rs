@@ -1,7 +1,7 @@
 use axum::{Json, extract::State};
 use serde::Serialize;
 
-use crate::AppState;
+use crate::{AppState, server_address};
 
 pub const SOCKET_URL: &str = "/ws";
 pub const NOTIF_URL: &str = "/push";
@@ -45,9 +45,9 @@ pub struct WebPushEndpoints {
 pub async fn capabilities_handler(
     State(state): State<AppState>,
 ) -> Json<CapabilitiesResponse<'static>> {
+    let address = server_address();
     // Derive from domain
-    let ws = state
-        .domain
+    let ws = address
         .replace("https://", "wss://")
         .replace("http://", "ws://")
         + SOCKET_URL;
@@ -65,8 +65,8 @@ pub async fn capabilities_handler(
                 public_key: state.notification_service.public_key.clone(),
             },
             endpoints: WebPushEndpoints {
-                register: format!("{}{}/register", state.domain, NOTIF_URL),
-                revoke: format!("{}{}/revoke", state.domain, NOTIF_URL),
+                register: format!("{}{}/register", address, NOTIF_URL),
+                revoke: format!("{}{}/revoke", address, NOTIF_URL),
             },
         }, // state.domain.to_string() + NOTIF_URL,
     })

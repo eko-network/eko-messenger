@@ -1,5 +1,6 @@
 use crate::{
-    activitypub::PreKeyBundle,
+    activitypub::types::eko_types::DeviceAction,
+    devices::DeviceId,
     errors::AppError,
     storage::models::{
         RegisterDeviceResult, RotatedRefreshToken, StoredInboxEntry, StoredOutboxActivity,
@@ -15,14 +16,14 @@ pub trait InboxStore: Send + Sync {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-        did: &str,
+        did: DeviceId,
     ) -> Result<Vec<StoredInboxEntry>, AppError>;
 
     /// Links an inbox to an existing stored activity.
     async fn insert_inbox_entry(
         &self,
         inbox_actor_id: &str,
-        to_did: &str,
+        to_did: DeviceId,
         entry: StoredInboxEntry,
     ) -> Result<(), AppError>;
 }
@@ -37,9 +38,8 @@ pub trait OutboxStore: Send + Sync {
 
 #[async_trait]
 pub trait DeviceStore: Send + Sync {
-    async fn key_bundles_for_user(&self, uid: &str) -> Result<Vec<PreKeyBundle>, AppError>;
-
-    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<String>, AppError>;
+    async fn get_approved_devices(&self, uid: &str) -> Result<Vec<DeviceId>, AppError>;
+    async fn device_actions_for_user(&self, uid: &str) -> Result<Vec<DeviceAction>, AppError>;
 
     async fn register_device(
         &self,
@@ -62,6 +62,13 @@ pub trait DeviceStore: Send + Sync {
     ) -> Result<Option<RotatedRefreshToken>, AppError>;
 
     async fn logout_device(&self, refresh_token: &Uuid) -> Result<(), AppError>;
+
+    async fn get_device_status(&self, did: DeviceId) -> Result<bool, AppError>;
+
+    async fn get_prekey_bundle(
+        &self,
+        did: DeviceId,
+    ) -> Result<Option<crate::activitypub::types::eko_types::PreKeyBundle>, AppError>;
 }
 
 #[async_trait]
@@ -82,12 +89,12 @@ pub trait ActorStore: Send + Sync {
 pub trait NotificationStore: Send + Sync {
     async fn upsert_endpoint(
         &self,
-        did: &str,
+        did: DeviceId,
         endpoint: &web_push::SubscriptionInfo,
     ) -> Result<(), AppError>;
     async fn retrive_endpoints(
         &self,
-        dids: &[String],
+        dids: &[DeviceId],
     ) -> Result<Vec<web_push::SubscriptionInfo>, AppError>;
 }
 

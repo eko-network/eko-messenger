@@ -1,4 +1,5 @@
 /// Defines the internal system state
+use crate::devices::DeviceId;
 use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -28,7 +29,8 @@ pub struct StoredOutboxActivity {
 
 #[derive(Debug, Clone)]
 pub struct RegisterDeviceResult {
-    pub did: String,
+    pub approved: bool,
+    pub did: DeviceId,
     pub refresh_token: Uuid,
 }
 
@@ -36,7 +38,7 @@ pub struct RegisterDeviceResult {
 pub struct RotatedRefreshToken {
     pub refresh_token: Uuid,
     pub uid: String,
-    pub did: String,
+    pub did: DeviceId,
     pub expires_at: OffsetDateTime,
 }
 

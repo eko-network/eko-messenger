@@ -11,6 +11,7 @@ pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
     NotFound(String),
+    DevicePending(String),
     InternalError(anyhow::Error),
 }
 
@@ -32,6 +33,10 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => {
                 error!("Not found: {}", msg);
                 (StatusCode::NOT_FOUND, msg)
+            }
+            AppError::DevicePending(msg) => {
+                error!("Device pending approval: {}", msg);
+                (StatusCode::FORBIDDEN, msg)
             }
             AppError::InternalError(e) => {
                 error!("Internal server error: {:#}", e);

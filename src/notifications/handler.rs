@@ -14,7 +14,7 @@ pub async fn register_handler(
     tracing::info!("Recived Registration for {}", req.endpoint);
     state
         .notification_service
-        .register(&claims.did, &req)
+        .register(claims.did, &req)
         .await?;
     Ok(StatusCode::OK)
 }

@@ -6,7 +6,10 @@ use web_push::{
     VapidSignatureBuilder, WebPushClient, WebPushMessageBuilder,
 };
 
-use crate::{errors::AppError, notifications::vapid::maybe_create_vapid_key, storage::Storage};
+use crate::{
+    devices::DeviceId, errors::AppError, notifications::vapid::maybe_create_vapid_key,
+    storage::Storage,
+};
 
 pub struct NotificationService {
     storage: Arc<Storage>,
@@ -27,14 +30,18 @@ impl NotificationService {
             public_key,
         })
     }
-    pub async fn register(&self, did: &str, endpoint: &SubscriptionInfo) -> Result<(), AppError> {
+    pub async fn register(
+        &self,
+        did: DeviceId,
+        endpoint: &SubscriptionInfo,
+    ) -> Result<(), AppError> {
         self.storage
             .notifications
             .upsert_endpoint(did, endpoint)
             .await?;
         Ok(())
     }
-    pub async fn notify(&self, dids: &[String]) -> Result<(), AppError> {
+    pub async fn notify(&self, dids: &[DeviceId]) -> Result<(), AppError> {
         let endpoints = self.storage.notifications.retrive_endpoints(dids).await?;
         join_all(endpoints.into_iter().map(|sub| {
             let client = self.client.clone();

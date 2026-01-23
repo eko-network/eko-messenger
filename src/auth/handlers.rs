@@ -120,7 +120,6 @@ impl Auth {
         req: LoginRequest,
         ip_address: &str,
         user_agent: &str,
-        domain: &str,
     ) -> Result<Json<LoginResponse>, AppError> {
         let (actor, uid) = self
             .provider
@@ -144,7 +143,7 @@ impl Auth {
             )
             .await?;
 
-        let actor_id = actor_url(domain, &uid);
+        let actor_id = actor_url(&uid);
         let inbox_url = format!("{}/inbox", actor_id);
         let outbox_url = format!("{}/outbox", actor_id);
         self.storage
@@ -154,14 +153,14 @@ impl Auth {
 
         let access_token = self
             .jwt_helper
-            .create_jwt(&uid, &register.did)
+            .create_jwt(&uid, register.did)
             .map_err(|e| anyhow::anyhow!(e))?;
 
         let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
 
         let response = LoginResponse {
             uid: uid.clone(),
-            did: register.did,
+            did: register.did.to_url(),
             access_token,
             refresh_token: register.refresh_token,
             expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
@@ -185,7 +184,7 @@ impl Auth {
 
         match result {
             Some(rotated) => {
-                let access_token = self.jwt_helper.create_jwt(&rotated.uid, &rotated.did)?;
+                let access_token = self.jwt_helper.create_jwt(&rotated.uid, rotated.did)?;
                 let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
                 Ok(Json(RefreshResponse {
                     access_token,
@@ -229,7 +228,7 @@ pub async fn login_handler(
 ) -> Result<Json<LoginResponse>, AppError> {
     state
         .auth
-        .login(req, &ip.to_string(), &user_agent.to_string(), &state.domain)
+        .login(req, &ip.to_string(), &user_agent.to_string())
         .await
 }
 
