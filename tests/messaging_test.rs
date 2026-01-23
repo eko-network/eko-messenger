@@ -1,8 +1,9 @@
 mod common;
 
 use base64::{Engine as _, engine::general_purpose};
-use common::spawn_app;
+use common::{generate_login_request, spawn_app};
 use eko_messenger::activitypub::{CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId};
+use eko_messenger::auth::LoginResponse;
 use serde_json::Value;
 
 #[tokio::test]
@@ -103,5 +104,110 @@ async fn test_send_and_receive_message_to_self() {
         encrypted_note["attributedTo"],
         format!("{}/users/{}", app.domain, uid),
         "AttributedTo mismatch"
+    );
+}
+
+#[tokio::test]
+async fn test_send_message_device_mismatch() {
+    let app = spawn_app().await;
+    let client = &app.client;
+
+    // --- Recipient (User A) Setup ---
+    let user_a_email = "userA@example.com";
+
+    // Register User A - Device 1
+    let login_req_a1 = generate_login_request(user_a_email.to_string(), "password".to_string());
+    let login_a1 = app
+        .login_http(&login_req_a1.email, &login_req_a1.password)
+        .await;
+    let uid_a = login_a1.uid.clone();
+    let did_a1 = login_a1.did;
+    let actor_url_a = app.actor_url(&uid_a);
+
+    // Register User A - Device 2 (with a different device name)
+    let mut login_req_a2 = generate_login_request(user_a_email.to_string(), "password".to_string());
+    login_req_a2.device_name = "test_device_A2".to_string();
+    let login_url = format!("{}/auth/v1/login", &app.address);
+    let login_res_a2 = client
+        .post(&login_url)
+        .header("User-Agent", "test-client")
+        .json(&login_req_a2)
+        .send()
+        .await
+        .expect("HTTP Login for A2 failed");
+    let login_body_a2 = login_res_a2.text().await.unwrap();
+    let login_a2: LoginResponse =
+        serde_json::from_str(&login_body_a2).expect("Failed to parse login response for A2");
+    let did_a2 = login_a2.did; // This is User A's second device ID
+
+    assert_ne!(did_a1, did_a2, "Device IDs for User A should be different");
+
+    // --- Sender (User B) Setup ---
+    let user_b_email = "userB@example.com";
+    let login_b = app.login_http(user_b_email, "password").await;
+    let auth_token_b = login_b.access_token;
+    let uid_b = login_b.uid;
+    let did_b = login_b.did;
+
+    // --- Construct Malformed Message (encrypted only for Device 1 of User A) ---
+    let outbox_url_a = format!("{}/outbox", &actor_url_a);
+    let message_content = "secret message for User A".to_string();
+
+    let encrypted_message_entry_for_a1 = EncryptedMessageEntry {
+        to: did_a1, // ONLY encrypt for Device 1
+        from: did_b,
+        content: message_content.as_bytes().to_vec(), // Placeholder content
+    };
+
+    let encrypted_message = EncryptedMessage::<NoId> {
+        context: serde_json::json!([
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1"
+        ]),
+        type_field: "EncryptedMessage".to_string(), // Use the correct type
+        id: NoId,
+        content: vec![encrypted_message_entry_for_a1], // Intentionally missing did_a2
+        attributed_to: app.actor_url(&uid_b),
+        to: vec![actor_url_a.clone()], // Recipient actor URL
+    };
+
+    let outbox_payload = CreateActivity::<NoId> {
+        context: Value::String("https://www.w3.org/ns/activitystreams".to_string()),
+        type_field: "Create".to_string(),
+        id: NoId,
+        actor: app.actor_url(&uid_b),
+        object: encrypted_message,
+    };
+
+    // --- Send Request ---
+    let outbox_res = client
+        .post(&outbox_url_a)
+        .bearer_auth(&auth_token_b)
+        .header("User-Agent", "test-client")
+        .json(&outbox_payload)
+        .send()
+        .await
+        .expect("Failed to send message to recipient's outbox");
+
+    // --- Assert Failure ---
+    let outbox_status = outbox_res.status().as_u16();
+    let outbox_body = outbox_res.text().await.unwrap();
+
+    assert_eq!(
+        outbox_status,
+        400, // Expecting Bad Request
+        "Expected 400 Bad Request status, got {}: {}",
+        outbox_status,
+        outbox_body
+    );
+
+    // Assert a specific error message
+    let error_json: Value =
+        serde_json::from_str(&outbox_body).expect("Failed to parse error response body");
+    assert_eq!(
+        error_json["error"],
+        "device_list_mismatch", // Our custom error message
+        "Expected 'device_list_mismatch' error, got: {}",
+        outbox_body
     );
 }

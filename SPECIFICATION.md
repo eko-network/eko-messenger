@@ -1,6 +1,6 @@
 # Eko-messenger
 
-Version: 0.0.2
+Version: 0.0.4
 
 ## Overview
 
@@ -40,6 +40,10 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 * **Message**: A Signal encrypted payload addressed to a single Device.  
 * **Client-to-Server (C2S)**: Communication between a client/device and its home server.  
 * **Server-to-Server (S2S)**: Federated communication between ActivityPub servers.
+* **Group**: A set of Users that receive the same messages.
+* **Group Epoch**: The monotonically increasing reference of the state of a group.
+* **Group Master Key**: Used to derive message encryption keys for groups.
+* **EncryptedGroupState**: An opaque, end-to-end encrypted representation of a Group State, stored by the server for device synchronization.
 
 ## ActivityPub Model
 
@@ -219,7 +223,7 @@ Example: User with keyPackages collection
 
 All Signal encrypted messages are transported inside a `SignalEnvelope`.
 
-* Targets *one* user (TODO: for groups, do we send N SignalEnvelopes for each user? Or, we probably want to wrap again into some SignalGroupEnvelope or smth, so the server can verify all users & devices are being sent a message).  
+* Targets *one* user.  
 * Contains one encrypted Message per destination Device  
   * Encrypted messages are of `“messageType”: “message/signal”`.  
   * Message content is stored as a base64 datatype. When unencrypted, the content uses ActivityPub defined types.  
@@ -254,11 +258,9 @@ Example: User sending a `SignalEnvelope`
   }
 }
 ```
-
 ## Encrypted Content
 
 All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryption, clients MUST process the content as if it were received directly from an ActivityPub inbox.
-
 ### Supported Objects
 
 * Note  
@@ -268,6 +270,12 @@ All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryp
 * Audio  
 * Video
 
+Groups (see Group Messaging Section for more information):
+- GroupCreate
+- GroupUpdate
+- GroupMemberAdd
+- GroupMemberRemove
+- GroupKeyRotate
 ### Constraints
 
 The following restrictions apply to content objects embedded in encrypted messages:
@@ -280,6 +288,7 @@ The following restrictions apply to content objects embedded in encrypted messag
   * Optional human-readable summary or description of the content.  
 * `attachment`  
   * List of attachments in the message. Images and files SHOULD be encrypted with AES-256-GCM using a new key for each attachment. The attachment MUST include a digest field with the SHA-256 hash of the encrypted file NOT the original file.
+* Group messages must contain the `groupId` and `epoch`.
 
 Example: Sending Attachments  
 ```json  
@@ -309,7 +318,7 @@ Example: Sending Attachments
 * `inReplyTo`  
   * References the id of a content object previously delivered to the same conversation.
 
-Example: Create activity  
+Example: Create activity
 ```json  
 {
   "@context": "https://www.w3.org/ns/activitystreams",
@@ -322,7 +331,7 @@ Example: Create activity
   }
 }
 ```  
-Example: Update activity  
+Example: Update activity
 ```json  
 {
   "@context": "https://www.w3.org/ns/activitystreams",
@@ -335,7 +344,7 @@ Example: Update activity
   }
 }
 ```  
-Example: Delete activity  
+Example: Delete activity
 ```json  
 {
   "@context": "https://www.w3.org/ns/activitystreams",
@@ -350,29 +359,21 @@ Example: Delete activity
 ### Send Message
 
 When sending a message, the client:
-
 1. Fetches each recipient’s `keyPackages` collection.  
-1. Encrypts the message for each recipient’s Device using the Signal protocol.  
-1. Creates a `SignalEnvelope` containing one encrypted Message per Device.  
-1. POSTs a Create activity with the `SignalEvelop` to its outbox.
-
+2. Encrypts the message for each recipient’s Device using the Signal protocol.  
+3. Creates a `SignalEnvelope` containing one encrypted Message per Device.  
+4. POSTs a Create activity with the `SignalEvelop` to its outbox.
 ### Receive Message
 
 #### Message
-
 1. Decrypt message.  
-1. Read as ActivityPub.
-
+2. Read as ActivityPub.
 #### PartialDelivery
-
 1. Re-pull Recipient’s `KeyPackages` and any keys the client does not have.  
-1. Resend `SignalEnvelop` with remaining encrypted messages.
-
+2. Resend `SignalEnvelop` with remaining encrypted messages.
 #### Reject
-
 1. Re-pull Recipient’s KeyPackages and any keys the client does not have.  
-1. Resend `SignalEnvelope` with new encrypted messages.
-
+2. Resend `SignalEnvelope` with new encrypted messages.
 ## Server-to-Server Protocol (S2S)
 
 ### Send Message
@@ -394,7 +395,7 @@ When a server receives a `SignalEnvelope`, it SHOULD:
    1. The server MAY send a Confirm activity to the sender’s inbox to confirm delivery.  
 1. If verification fails, a Reject activity MUST be sent to the Sender’s inbox.
 
-Example: Reject  
+Example: Reject
 ```json  
 {
   "@context": [
@@ -411,6 +412,218 @@ Example: Reject
 }
 ```
 
+## Group Messaging
+This section defines end-to-end encrypted group messaging using client-managed group state and cryptographic authorization.
+
+Group membership, roles, and state transitions are enforced exclusively by clients.
+Servers are intentionally blind to group semantics and MUST NOT interpret, validate, or enforce group state.
+
+This design mirrors Signal's modern group architecture ([paper](https://eprint.iacr.org/2019/1416.pdf)), excluding server-mediated anonymous credential proofs, which are explicitly deferred to future versions of this specification.
+### Group
+A Group represents an encrypted conversation between multiple members.
+- Identified by a stable, `groupId`.  MUST be a 128-bit UUID.
+- Exists only within encrypted payloads, client local storage, and encrypted blobs stored on the server.
+#### Server Blind Groups
+> This version excludes server mediated authorization for group state access or modification. We leave AuthCredentials for a new version of the specification as described in the [blog](https://signal.org/blog/signal-private-group-system/) and [paper](https://eprint.iacr.org/2019/1416.pdf).
+- Servers do not authenticate or authorize group membership.
+- Servers do not validate group control operations.
+- Server store `EncryptedGroupState` objects as opaque blobs without enforcing access control.
+
+All group membership, authorization, and state transition validity are enforced exclusively by clients using shared cryptographic secrets. Anonymous credentials and zero knowledge proofs are out of scope for now.
+
+### Group State
+Each client participating in a Group maintains a local Group State that contains the `groupId`, `epoch`, member list, admin roles, and master key.
+
+Example: Group State
+```json
+{
+  "groupId": "urn:uuid:<uuid>",
+  "epoch": 5,
+  "members": [
+    "https://eko.network/user/alice",
+    "https://other.network/user/bob"
+  ],
+  "admins": [
+    "https://eko.network/user/alice"
+  ],
+  "groupMasterKey": "<base64>",
+}
+```
+
+`epoch`
+- Each group maintains a monotonically increasing integer epoch.
+- MUST be incremented on any membership or key change.
+- Messages referencing a stale or unknown epoch MUST be rejected by the client.
+
+`groupMasterKey`
+- Symmetric secret shared by all current group members.
+- Derives the message encryption keys and group authentication (signing) keys.
+- MUST be rotated whenever a member is removed.
+
+#### Server Encrypted Group State
+To support device synchronization and recovery, clients MAY upload encrypted snapshots of Group State to their home server.
+
+Example: Server Visible EncryptedGroupState
+```json
+{
+  "type": "EncryptedGroupState",
+  "id": "https://eko.network/user/alice/groupState/<group-id>",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 7,
+  "mediaType": "application/eko-group-state",
+  "encoding": "base64",
+  "content": "<base64-encoded-ciphertext>"
+}
+```
+
+##### Server Requirements
+For each User, the server MUST:
+- Store only the latest `EncryptedGroupState` per `groupId`
+- Treat all group state blobs as opaque
+- Replace older blobs when a higher epoch is received
+- Associate blobs only with the owning User
+
+Servers MUST NOT:
+- Inspect contents
+- Modify contents
+- Enforce access control
+- Infer membership
+#### Group State Authentication
+All group control objects MUST be authenticated using a Group Signing Key derived from the previous Group State.
+
+##### Group Signing Key
+```
+groupSigningKey = HKDF(
+  input = groupMasterKey,
+  info  = "eko.group.signing",
+  length = 32
+)
+```
+
+##### Authentication Algorithm
+Compute the HMAC with the canonical JSON of the group control object.
+```
+mac = HMAC_SHA256(
+    key = groupSigningKey,
+    message = canonical_json(groupControlObject)
+)
+```
+
+Example: Authenticated Group Control Message
+```json
+{
+  "type": "GroupMemberAdd",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 6,
+  "added": ["https://new.network/user/charlie"],
+  "signature": {
+    "alg": "HMAC-SHA256",
+    "value": "<base64>"
+  }
+}
+```
+
+To prevent malicious servers from modifying Groups, clients MUST reject unsigned or invalidly signed group control messages.
+### Creating a Group
+1. Creator generates a `groupId` and `groupMasterKey`.
+2. Initializes `epoch=1`, member list, admin list.
+3. Sends a `GroupCreate` message to every device of every initial member.
+
+Example: Group Creation
+```json
+{
+  "type": "GroupCreate",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 1,
+  "members": [
+    "https://eko.network/user/alice",
+    "https://other.network/user/bob"
+  ],
+  "admins": [
+    "https://eko.network/user/alice"
+  ],
+  "groupMasterKey": "<base64>"
+}
+```
+
+### Modifying Group Membership
+Only clients whose local Group State grants them permission (by being present in the admin list) MAY generate valid group control messages.
+#### Adding a Member(s)
+1. The authorized client
+	1. Increments the `epoch`.
+	2. Rotates the `groupMasterKey`.
+2. Sends
+	1. `GroupMemberAdd` to existing members.
+	2. `GroupCreate` to new member(s).
+
+Example: Adding a New Group Member
+```json
+{
+  "type": "GroupMemberAdd",
+  "groupId": "urn:uuid:<uuid>",
+  "epoch": 6,
+  "added": [
+	"https://new.network/user/charlie"
+  ]
+}
+```
+```json
+{
+  "type": "GroupCreate",
+  "groupId": "urn:uuid:<uuid>",
+  "epoch": 6,
+  "members": [...],
+  "groupMasterKey": "<key>"
+}
+```
+
+#### Removing a Member
+1. The authorized client
+	1. Removes the member.
+	2. Rotates the `groupMasterKey`.
+	3. Increments the `epoch`.
+2. Sends a `GroupMemberRemove` activity to the remaining members.
+
+Example: Removing a Member
+```json
+{
+  "type": "GroupMemberRemove",
+  "id": "urn:uuid:<uuid>",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 7,
+  "removed": [
+    "https://other.network/user/bob"
+  ]
+}
+```
+
+Note: Because of federation and servers not knowing group membership, removed users may still receive group messages, but cannot decrypt new messages.
+### Sending a Group Message
+1. Client checks it has the current Group State.
+2. Client creates a standard ActivityPub object.
+	1. Object includes `groupId` and `epoch`.
+3. Object is encrypted using keys derived from `groupMasterKey`.
+4. One `SignalEnvelope` is sent per recipient user, containing messages for each device.
+
+Clients MUST drop:
+- Messages with stale epochs.
+- Messages failing decryption.
+- Messages failing group authentication.
+
+Example: Create Note Activity in a Group
+```json
+{
+  "type": "Create",
+  "object": {
+    "type": "Note",
+    "id": "urn:uuid:<uuid>",
+    "content": "hello group",
+    "groupId": "urn:uuid:<group-id>",
+    "epoch": 5
+  }
+}
+```
+
 ## E2E Encryption
 
 - TODO: Signal encryption mechanism described here.
@@ -421,8 +634,9 @@ Example: Reject
 
 ## Trust Model and Limitations
 
-* Servers are trusted to maintain the device list and correct keys.  
+* Servers are trusted to maintain the device list and correct keys.
   * See Federated Key Transparency work.
+* Servers may store encrypted Group State for the purpose of device synchronization. Servers are not trusted to read, interpret, or modify Group State contents. Compromise of a server MUST NOT reveal group membership, cryptographic keys, or message content.
 
 ## eko-messenger Implementation Guarantees
 
@@ -442,3 +656,4 @@ Signal currently has no message ordering guarantees, and is a current [issue](ht
 ### Push Notifications
 
 * Will be implemented, but is handled out-of-band and is not part of the protocol.
+
