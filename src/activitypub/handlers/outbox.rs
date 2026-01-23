@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    activitypub::{Create, EncryptedMessage, types::activity::Activities},
+    activitypub::{Create, EncryptedMessage, types::activity::Activity},
     auth::Claims,
     devices::DeviceId,
     errors::AppError,
@@ -19,10 +19,10 @@ use uuid::Uuid;
 pub async fn post_to_outbox(
     State(state): State<AppState>,
     Extension(_claims): Extension<Arc<Claims>>,
-    Json(payload): Json<Activities>,
+    Json(payload): Json<Activity>,
 ) -> Result<impl IntoResponse, AppError> {
     match payload {
-        Activities::Take(payload) => {
+        Activity::Take(payload) => {
             if !payload.target.ends_with("/keyCollection") {
                 return Err(AppError::BadRequest("Invalid target URL".into()));
             }
@@ -40,7 +40,7 @@ pub async fn post_to_outbox(
 
             Ok((StatusCode::OK, Json(bundle)).into_response())
         }
-        Activities::Create(payload) => {
+        Activity::Create(payload) => {
             // TODO: message verification
             // These are now unused
             let message_id = format!("https://{}/messages/{}", state.domain, Uuid::new_v4());

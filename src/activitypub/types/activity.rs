@@ -9,7 +9,7 @@ fn default_context_value() -> Value {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
-pub enum Activities {
+pub enum Activity {
     Create(Create),
     Take(Take),
 }
@@ -41,10 +41,10 @@ pub fn generate_create(
     to_did: String,
     from_did: String,
     content: Vec<u8>,
-) -> Create {
+) -> Activity {
     use super::eko_types::EncryptedMessageEntry;
 
-    Create {
+    Activity::Create(Create {
         context: default_context_value(),
         id: None,
         actor: from_actor.clone(),
@@ -60,5 +60,5 @@ pub fn generate_create(
             to: vec![to_actor],
             type_field: "Note".to_string(),
         },
-    }
+    })
 }
