@@ -130,7 +130,7 @@ We define an activity `Take` which user may use to interact with another users `
   ],
   "type": "Take",
   "actor": "https://example.com/bob",
-  "object": "https://example.com/alice/device/1/keys",
+  "object": "https://example.com/devices/1/keyCollection",
 }
 ```
 
@@ -515,7 +515,9 @@ Example: Authenticated Group Control Message
   "type": "GroupMemberAdd",
   "groupId": "urn:uuid:<group-id>",
   "epoch": 6,
-  "added": ["https://new.network/user/charlie"],
+  "added": [
+    "https://new.network/user/charlie"
+  ],
   "signature": {
     "alg": "HMAC-SHA256",
     "value": "<base64>"
@@ -563,7 +565,7 @@ Example: Adding a New Group Member
   "groupId": "urn:uuid:<uuid>",
   "epoch": 6,
   "added": [
-	"https://new.network/user/charlie"
+    "https://new.network/user/charlie"
   ]
 }
 ```
