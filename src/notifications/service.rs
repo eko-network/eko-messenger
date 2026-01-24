@@ -1,5 +1,6 @@
 use std::{env::var, sync::Arc};
 
+use anyhow::Context;
 use futures::future::join_all;
 use web_push::{
     ContentEncoding, HyperWebPushClient, PartialVapidSignatureBuilder, SubscriptionInfo,
@@ -21,12 +22,16 @@ pub struct NotificationService {
 impl NotificationService {
     pub async fn new(storage: Arc<Storage>) -> anyhow::Result<Self> {
         let pem_path = var("VAPID_KEY_PATH").expect("VAPID_KEY_PATH should be set in enviroment");
-        let public_key = maybe_create_vapid_key(&pem_path).await?;
-        let file = std::fs::File::open(pem_path)?;
+        let public_key = maybe_create_vapid_key(&pem_path)
+            .await
+            .with_context(|| format!("Failed to create/load VAPID key at: {}", pem_path))?;
+        let file = std::fs::File::open(&pem_path)
+            .with_context(|| format!("Failed to open VAPID key file at: {}", pem_path))?;
         Ok(NotificationService {
             storage,
             client: HyperWebPushClient::new(),
-            vapid: VapidSignatureBuilder::from_pem_no_sub(file)?,
+            vapid: VapidSignatureBuilder::from_pem_no_sub(file)
+                .with_context(|| format!("Failed to parse VAPID key from: {}", pem_path))?,
             public_key,
         })
     }

@@ -12,10 +12,11 @@
   outputs = {
     nixpkgs,
     rust-overlay,
+    self,
     ...
   }: let
-    inherit (nixpkgs) lib;
-    forAllSystems = lib.genAttrs lib.systems.flakeExposed;
+    supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+    forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
   in {
     packages = forAllSystems (
       system: let
@@ -24,11 +25,11 @@
           inherit system overlays;
         };
       in {
-        default = import ./nix/package.nix { inherit pkgs; };
+        default = import ./nix/package.nix {inherit pkgs;};
       }
     );
 
-    nixosModules.default = import ./nix/module.nix;
+    nixosModules.default = import ./nix/module.nix {inherit self;};
 
     devShells = forAllSystems (
       system: let
@@ -37,7 +38,7 @@
           inherit system overlays;
         };
       in {
-        default = import ./nix/devshell.nix { inherit pkgs; };
+        default = import ./nix/devshell.nix {inherit pkgs;};
       }
     );
   };

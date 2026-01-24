@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use gcp_auth::{Token, TokenProvider};
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -63,8 +63,17 @@ impl FirebaseAuth {
         let service_account_path = var("GOOGLE_APPLICATION_CREDENTIALS")
             .expect("GOOGLE_APPLICATION_CREDENTIALS should be set in enviroment");
 
-        let service_account: Value =
-            serde_json::from_str(&fs::read_to_string(service_account_path).await?)?;
+        let service_account: Value = serde_json::from_str(
+            &fs::read_to_string(&service_account_path)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to read Google service account credentials from: {}",
+                        service_account_path
+                    )
+                })?,
+        )
+        .context("Failed to parse service account JSON")?;
 
         let project_id: String = service_account
             .pointer("/project_id")

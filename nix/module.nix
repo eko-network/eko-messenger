@@ -1,4 +1,4 @@
-{
+{self}: {
   config,
   lib,
   pkgs,
@@ -16,7 +16,7 @@ in {
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./package.nix {};
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default or (pkgs.callPackage ./package.nix {});
       description = "The eko-messenger package to use";
     };
 
@@ -36,6 +36,12 @@ in {
       type = lib.types.enum ["local" "firebase"];
       default = "local";
       description = "The identity provider to use for authentication";
+    };
+
+    firebaseServiceAccount = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to Firebase service account JSON";
     };
 
     database = {
@@ -85,18 +91,6 @@ in {
       description = "The address the server will bind to";
     };
 
-    firebaseApiKey = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Firebase API key";
-    };
-
-    firebaseServiceAccount = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Path to Firebase service account JSON";
-    };
-
     jwtSecret = lib.mkOption {
       type = lib.types.str;
       description = "Secret for JWT signing";
@@ -105,7 +99,13 @@ in {
     logLevel = lib.mkOption {
       type = lib.types.str;
       default = "info";
-      description = "Rust log level)";
+      description = "Rust log level";
+    };
+
+    vapidKeyPath = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/eko-messenger/vapid.pem";
+      description = "Path to a .pem file for notification encryption";
     };
   };
 
@@ -136,9 +136,8 @@ in {
         User = lib.mkIf cfg.database.createLocally cfg.database.user;
         Restart = "on-failure";
         RestartSec = "5s";
-
+        StartLimitBurst = 3;
         ExecStart = "${cfg.package}/bin/eko-messenger";
-
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectSystem = "strict";
@@ -157,10 +156,7 @@ in {
           RUST_LOG = cfg.logLevel;
           AUTH_PROVIDER = cfg.authProvider;
           JWT_SECRET = cfg.jwtSecret;
-          VAPID_KEY_PATH = "/var/lib/eko-messenger/vapid.pem";
-        }
-        // lib.optionalAttrs (cfg.firebaseApiKey != null) {
-          FIREBASE_API_KEY = cfg.firebaseApiKey;
+          VAPID_KEY_PATH = cfg.vapidKeyPath;
         }
         // lib.optionalAttrs (cfg.firebaseServiceAccount != null) {
           GOOGLE_APPLICATION_CREDENTIALS = cfg.firebaseServiceAccount;
