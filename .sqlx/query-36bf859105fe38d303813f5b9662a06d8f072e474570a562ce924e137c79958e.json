@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO device_actions(is_add, did, uid)\n            SELECT FALSE, r.did, d.uid\n            FROM refresh_tokens r\n            JOIN devices d ON d.did = r.did\n            WHERE r.token = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36bf859105fe38d303813f5b9662a06d8f072e474570a562ce924e137c79958e"
+}
