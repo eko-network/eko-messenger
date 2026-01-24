@@ -204,10 +204,15 @@ impl DeviceStore for PostgresDeviceStore {
     }
 
     async fn logout_device(&self, refresh_token: &Uuid) -> Result<(), AppError> {
+        //TODO This is a placeholder to keep everything working. Client needs to generate the
+        //revoke eventually
         sqlx::query!(
             r#"
-            DELETE FROM devices
-            WHERE did = (SELECT did FROM refresh_tokens WHERE token = $1)
+            INSERT INTO device_actions(is_add, did, uid)
+            SELECT FALSE, r.did, d.uid
+            FROM refresh_tokens r
+            JOIN devices d ON d.did = r.did
+            WHERE r.token = $1
             "#,
             refresh_token
         )
