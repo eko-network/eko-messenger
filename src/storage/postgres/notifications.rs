@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::PgPool;
 use web_push::{SubscriptionInfo, SubscriptionKeys};
 
-use crate::{errors::AppError, storage::traits::NotificationStore};
+use crate::{devices::DeviceId, errors::AppError, storage::traits::NotificationStore};
 
 pub struct PostgresNotificationStore {
     pool: PgPool,
@@ -15,7 +15,11 @@ impl PostgresNotificationStore {
 }
 #[async_trait]
 impl NotificationStore for PostgresNotificationStore {
-    async fn upsert_endpoint(&self, did: i32, endpoint: &SubscriptionInfo) -> Result<(), AppError> {
+    async fn upsert_endpoint(
+        &self,
+        did: DeviceId,
+        endpoint: &SubscriptionInfo,
+    ) -> Result<(), AppError> {
         sqlx::query!(
             r#"
             INSERT INTO notifications (did, endpoint, p256dh, auth)
@@ -24,7 +28,7 @@ impl NotificationStore for PostgresNotificationStore {
             DO UPDATE SET
                 endpoint = EXCLUDED.endpoint, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
             "#,
-            did,
+            did.as_uuid(),
             endpoint.endpoint,
             endpoint.keys.p256dh,
             endpoint.keys.auth
@@ -34,12 +38,16 @@ impl NotificationStore for PostgresNotificationStore {
 
         Ok(())
     }
-    async fn retrive_endpoints(&self, dids: &[i32]) -> Result<Vec<SubscriptionInfo>, AppError> {
+    async fn retrive_endpoints(
+        &self,
+        dids: &[DeviceId],
+    ) -> Result<Vec<SubscriptionInfo>, AppError> {
+        let uuid_dids: Vec<_> = dids.iter().map(|d| d.as_uuid()).collect();
         let rows = sqlx::query!(
             r#"
             SELECT endpoint, p256dh, auth from notifications WHERE did = ANY($1)
             "#,
-            dids,
+            &uuid_dids,
         )
         .fetch_all(&self.pool)
         .await?;

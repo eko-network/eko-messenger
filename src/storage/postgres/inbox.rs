@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
 
+use crate::devices::DeviceId;
 use crate::errors::AppError;
 use crate::storage::models::StoredInboxEntry;
 use crate::storage::traits::InboxStore;
@@ -20,7 +21,7 @@ impl InboxStore for PostgresInboxStore {
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
-        did: i32,
+        did: DeviceId,
     ) -> Result<Vec<StoredInboxEntry>, AppError> {
         let rows = sqlx::query!(
             r#"
@@ -29,7 +30,7 @@ impl InboxStore for PostgresInboxStore {
             RETURNING actor_id, content, from_did
             "#,
             inbox_actor_id,
-            did
+            did.as_uuid()
         )
         .fetch_all(&self.pool)
         .await?;
@@ -47,7 +48,7 @@ impl InboxStore for PostgresInboxStore {
     async fn insert_inbox_entry(
         &self,
         inbox_actor_id: &str,
-        to_did: i32,
+        to_did: DeviceId,
         entry: StoredInboxEntry,
     ) -> Result<(), AppError> {
         sqlx::query!(
@@ -58,7 +59,7 @@ impl InboxStore for PostgresInboxStore {
             entry.actor_id,
             inbox_actor_id,
             entry.from_did,
-            to_did,
+            to_did.as_uuid(),
             entry.content
         )
         .execute(&self.pool)

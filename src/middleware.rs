@@ -6,7 +6,7 @@ use axum_extra::{
     headers::{Authorization, authorization::Bearer},
 };
 
-use crate::{AppState, errors::AppError};
+use crate::{AppState, auth::jwt::Claims, errors::AppError};
 
 pub async fn auth_middleware(
     State(state): State<AppState>,
@@ -28,4 +28,27 @@ pub async fn auth_middleware(
     let response = next.run(request).await;
 
     Ok(response)
+}
+
+/// Middleware to check if a device is in "active" status
+pub async fn require_active_device(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, AppError> {
+    // Extract claims from the request extensions (set by auth_middleware)
+    let claims = request
+        .extensions()
+        .get::<Arc<Claims>>()
+        .ok_or_else(|| AppError::Unauthorized("No claims found in request".to_string()))?;
+
+    let is_approved = state.storage.devices.get_device_status(claims.did).await?;
+
+    if is_approved {
+        Ok(next.run(request).await)
+    } else {
+        Err(AppError::DevicePending(
+            "Device is pending approval. Please approve from another device.".to_string(),
+        ))
+    }
 }

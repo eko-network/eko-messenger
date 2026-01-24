@@ -2,6 +2,7 @@ use crate::{
     AppState,
     activitypub::types::{actor_url, generate_create},
     auth::Claims,
+    devices::DeviceId,
     errors::AppError,
 };
 use axum::{
@@ -18,7 +19,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
-pub type WebSockets = Arc<DashMap<(String, i32), WsSender>>;
+pub type WebSockets = Arc<DashMap<DeviceId, WsSender>>;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -35,9 +36,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
         "Client {} - {} connected via WebSocket",
         claims.sub, claims.did
     );
-    state
-        .sockets
-        .insert((claims.sub.clone(), claims.did), tx.clone());
+    state.sockets.insert(claims.did, tx.clone());
 
     // Send messages from inbox to client
     let actor_id = actor_url(&state.domain, &claims.sub);
@@ -52,7 +51,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
                 let message = generate_create(
                     actor_id.clone(),
                     item.actor_id,
-                    claims.did,
+                    claims.did.to_url(&state.domain),
                     item.from_did,
                     item.content,
                 );
@@ -100,6 +99,6 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
             else => break,
         }
     }
-    state.sockets.remove(&(claims.sub.clone(), claims.did));
+    state.sockets.remove(&claims.did);
     info!("Client {} - {} disconnected", claims.sub, claims.did);
 }

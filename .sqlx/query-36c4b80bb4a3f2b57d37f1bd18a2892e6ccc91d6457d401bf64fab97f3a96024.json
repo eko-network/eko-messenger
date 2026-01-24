@@ -7,8 +7,8 @@
       "Left": [
         "Text",
         "Text",
-        "Int4",
-        "Int4",
+        "Text",
+        "Uuid",
         "Bytea"
       ]
     },

@@ -1,22 +1,34 @@
-use crate::{AppState, activitypub::PreKeyBundle, errors::AppError};
+use std::collections::HashSet;
+
+use crate::{AppState, activitypub::types::eko_types::DeviceAction, errors::AppError};
 
 /// Service for managing user devices and key bundles
 pub struct DeviceService;
 
 impl DeviceService {
-    /// Get all key bundles for a user
-    pub async fn get_key_bundles_for_user(
+    /// Get all device actions for a user
+    pub async fn get_device_actions_for_user(
         state: &AppState,
         uid: &str,
-    ) -> Result<Vec<PreKeyBundle>, AppError> {
-        state.storage.devices.key_bundles_for_user(uid).await
+    ) -> Result<Vec<DeviceAction>, AppError> {
+        state.storage.devices.device_actions_for_user(uid).await
     }
 
     /// List all device IDs for a user
-    pub async fn list_device_ids(state: &AppState, uid: &str) -> Result<Vec<i32>, AppError> {
-        let bundles = Self::get_key_bundles_for_user(state, uid).await?;
-        Ok(bundles.iter().map(|b| b.did).collect())
-    }
+    pub async fn list_device_ids(state: &AppState, uid: &str) -> Result<HashSet<String>, AppError> {
+        let actions = Self::get_device_actions_for_user(state, uid).await?;
+        let mut set = HashSet::new();
 
-    // TODO the rest of the device functions like add, remove, validation
+        for action in actions {
+            match action {
+                DeviceAction::AddDevice(add_device) => {
+                    set.insert(add_device.did);
+                }
+                DeviceAction::RevokeDevice(revoke_device) => {
+                    set.remove(&revoke_device.did);
+                }
+            }
+        }
+        Ok(set)
+    }
 }

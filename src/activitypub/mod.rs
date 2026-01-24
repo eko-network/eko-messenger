@@ -4,11 +4,10 @@ pub mod types;
 pub mod validation;
 
 pub use handlers::{
-    actor_handler, capabilities_handler, get_inbox, get_key_bundles, post_to_outbox,
-    webfinger_handler,
+    actor_handler, capabilities_handler, get_devices, get_inbox, post_to_outbox, webfinger_handler,
 };
 
 pub use types::{
-    CreateActivity, EncryptedMessage, EncryptedMessageEntry, NoId, Person, PreKeyBundle, WithId,
-    actor_uid, actor_url, create_person, generate_create,
+    Activity, Create, EncryptedMessage, EncryptedMessageEntry, Person, PreKeyBundle, actor_uid,
+    actor_url, create_person, generate_create,
 };

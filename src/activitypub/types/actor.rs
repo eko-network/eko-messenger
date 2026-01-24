@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-fn default_context_value() -> Value {
+pub fn default_context_value() -> Value {
     Value::String(super::ACTIVITY_STREAMS_CONTEXT.to_string())
 }
 
@@ -16,7 +16,7 @@ pub struct Person {
     pub id: String,
     pub inbox: String,
     pub outbox: String,
-    pub key_bundle: String,
+    pub devices: String,
     pub preferred_username: String,
     pub profile_picture: Option<String>,
     pub summary: Option<String>,
@@ -35,7 +35,7 @@ pub fn create_person(
     let id = actor_url(domain, uid);
     let inbox_url = format!("{}/inbox", id);
     let outbox_url = format!("{}/outbox", id);
-    let key_bundles_url = format!("{}/keys/bundle.json", id);
+    let devices_url = format!("{}/deviceActions", id);
 
     Person {
         context: default_context_value(),
@@ -43,7 +43,7 @@ pub fn create_person(
         id,
         inbox: inbox_url,
         outbox: outbox_url,
-        key_bundle: key_bundles_url,
+        devices: devices_url,
         summary,
         preferred_username,
         name,

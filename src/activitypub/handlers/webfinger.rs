@@ -1,4 +1,4 @@
-use crate::{AppState, errors::AppError};
+use crate::{AppState, activitypub::actor_url, errors::AppError};
 use axum::{
     Json,
     extract::{Query, State},
@@ -40,7 +40,7 @@ pub async fn webfinger_handler(
 
     let uid = state.auth.provider.uid_from_username(username).await?;
 
-    let actor_url = format!("{}/users/{}", state.domain, uid);
+    let actor_url = actor_url(&state.domain, &uid);
 
     let jrd = serde_json::json!({
         "subject": resource,

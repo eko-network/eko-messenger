@@ -6,12 +6,12 @@ use jsonwebtoken::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::auth::handlers::JWT_LIFESPAN;
+use crate::{auth::handlers::JWT_LIFESPAN, devices::DeviceId};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
-    pub did: i32,
+    pub did: DeviceId,
     pub exp: usize,
     pub iat: usize,
     pub roles: Vec<String>,
@@ -36,7 +36,11 @@ impl JwtHelper {
             decoding_key: decoding_key,
         })
     }
-    pub fn create_jwt(&self, uid: &str, did: i32) -> Result<String, jsonwebtoken::errors::Error> {
+    pub fn create_jwt(
+        &self,
+        uid: &str,
+        did: DeviceId,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
         let now = OffsetDateTime::now_utc();
         let iat = now.unix_timestamp() as usize;
         // Set expiration to 15 minutes from now

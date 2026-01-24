@@ -5,7 +5,6 @@ use eko_messenger::{
     auth::{
         Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey,
     },
-    config::{db_config, storage_config},
     notifications::NotificationService,
     storage::{Storage, postgres::connection::postgres_storage},
 };
@@ -17,8 +16,8 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 pub struct TestApp {
+    pub domain: Arc<String>,
     pub address: String,
-    pub domain: String,
     pub storage: Arc<Storage>,
     pub client: Client,
 }
@@ -61,11 +60,11 @@ fn selected_storage_backend() -> StorageBackend {
 
 #[derive(Clone)]
 pub struct TestIdentityProvider {
-    domain: String,
+    domain: Arc<String>,
 }
 
 impl TestIdentityProvider {
-    pub fn new(domain: String) -> Self {
+    pub fn new(domain: Arc<String>) -> Self {
         Self { domain }
     }
 }
@@ -166,23 +165,29 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         .expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
-    let domain = format!("http://127.0.0.1:{}", port);
+    let domain = Arc::new(format!("http://127.0.0.1:{}", port));
 
+    // Initialize server address for tests
+    // Note: This will fail if called multiple times, but that's ok for tests
     let storage = match options.storage {
-        StorageBackend::Postgres => Arc::new(postgres_storage(postgres_pool().await)),
+        StorageBackend::Postgres => {
+            Arc::new(postgres_storage(domain.clone(), postgres_pool().await))
+        }
     };
 
     let client = reqwest::Client::new();
 
     let auth_service = match options.identity {
-        IdentityBackend::Test => {
-            Auth::new(TestIdentityProvider::new(domain.clone()), storage.clone())
-        }
+        IdentityBackend::Test => Auth::new(
+            domain.clone(),
+            TestIdentityProvider::new(domain.clone()),
+            storage.clone(),
+        ),
         IdentityBackend::Firebase => {
             let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone())
                 .await
                 .expect("Failed to create FirebaseAuth from env");
-            Auth::new(firebase_auth, storage.clone())
+            Auth::new(domain.clone(), firebase_auth, storage.clone())
         }
     };
 
@@ -191,8 +196,8 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         .expect("Failed to create notification_service");
 
     let app_state = AppState {
+        domain: domain.clone(),
         auth: Arc::new(auth_service),
-        domain: Arc::new(domain.clone()),
         storage: storage.clone(),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
@@ -212,7 +217,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
 
     TestApp {
         address,
-        domain,
+        domain: domain,
         storage,
         client: Client::new(),
     }

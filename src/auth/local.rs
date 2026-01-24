@@ -11,13 +11,13 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 pub struct LocalIdentityProvider {
-    domain: String,
     storage: Arc<Storage>,
+    domain: Arc<String>,
 }
 
 impl LocalIdentityProvider {
-    pub fn new(domain: String, storage: Arc<Storage>) -> Self {
-        Self { domain, storage }
+    pub fn new(domain: Arc<String>, storage: Arc<Storage>) -> Self {
+        Self { storage, domain }
     }
 }
 

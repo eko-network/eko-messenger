@@ -1,10 +1,17 @@
+use std::sync::Arc;
+
+use anyhow::anyhow;
 use async_trait::async_trait;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    activitypub::PreKeyBundle,
+    activitypub::types::{
+        actor::default_context_value,
+        eko_types::{AddDevice, DeviceAction, RevokeDevice},
+    },
     auth::{PreKey, SignedPreKey},
+    devices::DeviceId,
     errors::AppError,
     storage::{
         models::{RegisterDeviceResult, RotatedRefreshToken},
@@ -14,68 +21,30 @@ use crate::{
 
 pub struct PostgresDeviceStore {
     pool: PgPool,
+    domain: Arc<String>,
 }
 
 impl PostgresDeviceStore {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(domain: Arc<String>, pool: PgPool) -> Self {
+        Self { domain, pool }
     }
 }
 
 #[async_trait]
 impl DeviceStore for PostgresDeviceStore {
-    async fn key_bundles_for_user(&self, uid: &str) -> Result<Vec<PreKeyBundle>, AppError> {
-        let mut tx = self.pool.begin().await?;
-
-        let devices = sqlx::query!(
-            "SELECT did, identity_key, registration_id FROM devices WHERE uid = $1",
+    async fn get_approved_devices(&self, uid: &str) -> Result<Vec<DeviceId>, AppError> {
+        Ok(sqlx::query!(
+            r#"
+            SELECT did FROM devices
+            WHERE uid = $1 AND is_approved = TRUE
+            "#,
             uid
         )
-        .fetch_all(&mut *tx)
-        .await?;
-
-        let mut bundles = Vec::new();
-
-        for device in devices {
-            let pre_key = sqlx::query!(
-                r#"
-                DELETE FROM pre_keys
-                WHERE ctid = (
-                    SELECT ctid
-                    FROM pre_keys
-                    WHERE did = $1
-                    LIMIT 1
-                )
-                RETURNING key_id, key
-                "#,
-                device.did
-            )
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            let signed_pre_key = sqlx::query!(
-                "SELECT key_id, key, signature FROM signed_pre_keys WHERE did = $1",
-                device.did
-            )
-            .fetch_one(&mut *tx)
-            .await?;
-
-            if let Some(pre_key) = pre_key {
-                bundles.push(PreKeyBundle {
-                    did: device.did,
-                    identity_key: device.identity_key.clone(),
-                    registration_id: device.registration_id,
-                    pre_key_id: pre_key.key_id,
-                    pre_key: pre_key.key,
-                    signed_pre_key_id: signed_pre_key.key_id,
-                    signed_pre_key: signed_pre_key.key,
-                    signed_pre_key_signature: signed_pre_key.signature,
-                });
-            }
-        }
-
-        tx.commit().await?;
-        Ok(bundles)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(|v| DeviceId::new(v.did))
+        .collect())
     }
     async fn register_device(
         &self,
@@ -89,22 +58,24 @@ impl DeviceStore for PostgresDeviceStore {
         user_agent: &str,
         expires_at: time::OffsetDateTime,
     ) -> Result<RegisterDeviceResult, AppError> {
+        let approved_devices = self.get_approved_devices(uid).await?;
+
+        let tofu = approved_devices.is_empty() || true;
+
+        let did = DeviceId::new(Uuid::new_v4());
+
         let mut tx = self.pool.begin().await?;
 
-        let did = sqlx::query!(
+        sqlx::query!(
             r#"
-            INSERT INTO devices (uid, name, identity_key, registration_id)
-            VALUES ($1, $2, $3, $4)
-            RETURNING did
+            INSERT INTO devices (did, uid)
+            VALUES ($1, $2)
             "#,
+            did.as_uuid(),
             uid,
-            device_name,
-            identity_key,
-            registration_id
         )
-        .fetch_one(&mut *tx)
-        .await?
-        .did;
+        .execute(&mut *tx)
+        .await?;
 
         let refresh_token = sqlx::query!(
             r#"
@@ -112,7 +83,7 @@ impl DeviceStore for PostgresDeviceStore {
             VALUES ($1, $2, $3, $4)
             RETURNING token
             "#,
-            did,
+            did.as_uuid(),
             ip_address,
             user_agent,
             expires_at
@@ -124,7 +95,7 @@ impl DeviceStore for PostgresDeviceStore {
         for pre_key in pre_keys {
             sqlx::query!(
                 "INSERT INTO pre_keys (did, key_id, key) VALUES ($1, $2, $3)",
-                did,
+                did.as_uuid(),
                 pre_key.id,
                 pre_key.key
             )
@@ -137,7 +108,7 @@ impl DeviceStore for PostgresDeviceStore {
             INSERT INTO signed_pre_keys (did, key_id, key, signature)
             VALUES ($1, $2, $3, $4)
             "#,
-            did,
+            did.as_uuid(),
             signed_pre_key.id,
             signed_pre_key.key,
             signed_pre_key.signature
@@ -145,8 +116,27 @@ impl DeviceStore for PostgresDeviceStore {
         .execute(&mut *tx)
         .await?;
 
+        if tofu {
+            sqlx::query!(
+                r#"
+            INSERT INTO device_actions(is_add, did, uid, identity_key, registration_id, device_name)
+            VALUES (TRUE, $1, $2, $3, $4, $5)
+            "#,
+                did.as_uuid(),
+                uid,
+                identity_key,
+                registration_id,
+                device_name
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
         tx.commit().await?;
-        Ok(RegisterDeviceResult { did, refresh_token })
+        Ok(RegisterDeviceResult {
+            did: did,
+            refresh_token,
+            approved: tofu,
+        })
     }
 
     async fn rotate_refresh_token(
@@ -208,7 +198,7 @@ impl DeviceStore for PostgresDeviceStore {
         Ok(Some(RotatedRefreshToken {
             refresh_token: new_token,
             uid: row.uid,
-            did: row.did,
+            did: DeviceId::new(row.did),
             expires_at,
         }))
     }
@@ -227,14 +217,144 @@ impl DeviceStore for PostgresDeviceStore {
         Ok(())
     }
 
-    async fn get_dids_for_user(&self, uid: &str) -> Result<Vec<i32>, AppError> {
-        let dids = sqlx::query!("SELECT did FROM devices WHERE uid = $1", uid)
-            .fetch_all(&self.pool)
-            .await?
-            .into_iter()
-            .map(|r| r.did)
-            .collect();
+    async fn device_actions_for_user(&self, uid: &str) -> Result<Vec<DeviceAction>, AppError> {
+        let dids: Vec<DeviceAction> = sqlx::query!(
+            "SELECT did, is_add, prev, registration_id, identity_key FROM device_actions WHERE uid = $1 ORDER BY created_at ASC",
+            uid
+        )
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(|r| {
+            let did = DeviceId::new(r.did);
+            let global_did = did.to_url(&self.domain);
+            let id = did.action_url(&self.domain,r.is_add);
+            if r.is_add {
+                Ok(DeviceAction::AddDevice(AddDevice {
+                    id,
+                    context: default_context_value(),
+                    prev: r.prev.map(|v| v.try_into()).transpose().map_err(|_| anyhow!("Invalid hash stored"))?,
+                    key_collection: did.key_collection_url(&self.domain),
+                    did: global_did,
+                    identity_key: r.identity_key.ok_or(anyhow!("identity_key may not be null"))?,
+                    registration_id: r.registration_id.ok_or(anyhow!("registration_id may not be null"))?,
+                    //TODO
+                    proof: vec![],
+                }))
+            } else {
+                Ok(DeviceAction::RevokeDevice(RevokeDevice {
+                    id,
+                    context: default_context_value(),
+                    did: global_did,
+                    prev: r.prev.map(|v| v.try_into()).transpose().map_err(|_| anyhow!("Invalid hash stored"))?,
+                    //TODO
+                    proof: vec![],
+                }))
+            }
+        })
+        .collect::<Result<_, AppError>>()?;
 
         Ok(dids)
+    }
+
+    async fn get_device_status(&self, did: DeviceId) -> Result<bool, AppError> {
+        let device = sqlx::query!(
+            "SELECT is_approved FROM devices WHERE did = $1",
+            did.as_uuid()
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match device {
+            Some(d) => Ok(d.is_approved),
+            None => Err(AppError::NotFound("Device not found".to_string())),
+        }
+    }
+
+    async fn get_prekey_bundle(
+        &self,
+        did: DeviceId,
+    ) -> Result<Option<crate::activitypub::types::eko_types::PreKeyBundle>, AppError> {
+        use crate::activitypub::types::eko_types::PreKeyBundle;
+
+        let mut tx = self.pool.begin().await?;
+
+        // Count available prekeys for this device
+        let count = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*)
+            FROM pre_keys
+            WHERE did = $1
+            "#,
+            did.as_uuid()
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .unwrap_or(0);
+
+        if count == 0 {
+            tx.commit().await?;
+            return Ok(None);
+        }
+
+        // Get a prekey - delete if more than one exists, otherwise just select
+        let (pre_key_id, pre_key) = if count > 1 {
+            let result = sqlx::query!(
+                r#"
+                DELETE FROM pre_keys
+                WHERE ctid = (
+                    SELECT ctid
+                    FROM pre_keys
+                    WHERE did = $1
+                    LIMIT 1
+                )
+                RETURNING key_id, key
+                "#,
+                did.as_uuid()
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            (result.key_id, result.key)
+        } else {
+            let result = sqlx::query!(
+                r#"
+                SELECT key_id, key
+                FROM pre_keys
+                WHERE did = $1
+                LIMIT 1
+                "#,
+                did.as_uuid()
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            (result.key_id, result.key)
+        };
+
+        // Fetch the signed prekey
+        let signed_pre_key = sqlx::query!(
+            r#"
+            SELECT key_id, key, signature
+            FROM signed_pre_keys
+            WHERE did = $1
+            LIMIT 1
+            "#,
+            did.as_uuid()
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        match signed_pre_key {
+            Some(spk) => Ok(Some(PreKeyBundle {
+                did,
+                pre_key_id,
+                pre_key,
+                signed_pre_key_id: spk.key_id,
+                signed_pre_key: spk.key,
+                signed_pre_key_signature: spk.signature,
+            })),
+            None => Ok(None),
+        }
     }
 }

@@ -1,6 +1,9 @@
+use std::collections::HashSet;
+
 use crate::{
     AppState,
-    activitypub::{CreateActivity, EncryptedMessage, actor_uid, types::generate_create},
+    activitypub::{Create, EncryptedMessage, types::generate_create},
+    devices::DeviceId,
     errors::AppError,
     storage::models::StoredInboxEntry,
 };
@@ -15,7 +18,7 @@ impl MessagingService {
     /// Handles routing to local or remote recipients
     pub async fn process_outgoing_message(
         state: &AppState,
-        activity: &CreateActivity<impl serde::Serialize>,
+        activity: &Create,
         sender_actor: &str,
     ) -> Result<(), AppError> {
         // Iterate through all recipients
@@ -40,33 +43,37 @@ impl MessagingService {
     /// Deliver message to a local recipient
     async fn deliver_local(
         state: &AppState,
-        message: &EncryptedMessage<impl serde::Serialize>,
+        message: &EncryptedMessage,
         sender_actor: &str,
         recipient_actor_id: &str,
     ) -> Result<(), AppError> {
         // Validate envelope has correct device count for recipient
+        let envelope_device_ids: HashSet<String> =
+            message.content.iter().map(|e| e.to.clone()).collect();
+
         let recipient_devices = crate::devices::DeviceService::list_device_ids(
             state,
             &crate::activitypub::actor_uid(recipient_actor_id)?,
         )
         .await?;
 
-        crate::messaging::envelope::validate_envelope_for_recipient(
-            message.content.len(),
-            recipient_devices.len(),
-        )?;
+        info!(
+            "envelope: {:?}, actual: {:?}",
+            envelope_device_ids, recipient_devices
+        );
 
-        // Validate device IDs match
-        let envelope_device_ids: Vec<i32> = message.content.iter().map(|e| e.to).collect();
-        crate::messaging::envelope::validate_device_ids(&envelope_device_ids, &recipient_devices)?;
+        if envelope_device_ids != recipient_devices {
+            return Err(AppError::BadRequest("device_list_mismatch".to_string()));
+        }
 
-        let mut did_to_notif: Vec<i32> = Vec::with_capacity(message.content.len());
+        let mut did_to_notif: Vec<_> = Vec::with_capacity(message.content.len());
 
         for entry in &message.content {
             info!("SEND for {}, {}", recipient_actor_id, entry.to);
 
+            let did = DeviceId::from_url(&entry.to)?;
             // Try to deliver via WebSocket if recipient is online
-            if Self::try_websocket_delivery(state, message, sender_actor, recipient_actor_id, entry)
+            if Self::try_websocket_delivery(state, sender_actor, recipient_actor_id, entry, did)
                 .await?
             {
                 debug!("Delivered via WebSocket to {}", recipient_actor_id);
@@ -79,17 +86,17 @@ impl MessagingService {
                 .inbox
                 .insert_inbox_entry(
                     recipient_actor_id,
-                    entry.to,
+                    did,
                     StoredInboxEntry {
                         actor_id: sender_actor.to_string(),
-                        from_did: entry.from,
+                        from_did: entry.from.clone(),
                         content: entry.content.clone(),
                     },
                 )
                 .await?;
 
             // Queue for push notification
-            did_to_notif.push(entry.to);
+            did_to_notif.push(did);
         }
 
         // Send push notifications for offline devices
@@ -104,16 +111,13 @@ impl MessagingService {
     /// Returns true if successfully delivered via WebSocket
     async fn try_websocket_delivery(
         state: &AppState,
-        _message: &EncryptedMessage<impl serde::Serialize>,
         sender_actor: &str,
         recipient_actor_id: &str,
         entry: &crate::activitypub::EncryptedMessageEntry,
+        did: DeviceId,
     ) -> Result<bool, AppError> {
         // Check if the recipient device is online
-        if let Some(sender) = state
-            .sockets
-            .get(&(actor_uid(recipient_actor_id)?, entry.to))
-        {
+        if let Some(sender) = state.sockets.get(&did) {
             debug!(
                 "{} - {} online, trying to send via socket",
                 recipient_actor_id, entry.to
@@ -123,8 +127,8 @@ impl MessagingService {
             let ws_message = generate_create(
                 recipient_actor_id.to_string(),
                 sender_actor.to_string(),
-                entry.to,
-                entry.from,
+                entry.to.clone(),
+                entry.from.clone(),
                 entry.content.clone(),
             );
 
@@ -148,7 +152,7 @@ impl MessagingService {
     /// TODO Deliver message to a remote recipient
     async fn deliver_remote(
         state: &AppState,
-        activity: &CreateActivity<impl serde::Serialize>,
+        activity: &Create,
         recipient_actor_id: &str,
     ) -> Result<(), AppError> {
         // FIXME AI generated. Needs to be fixed.

@@ -68,7 +68,7 @@ pub struct SignupRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
     pub uid: String,
-    pub did: i32,
+    pub did: String,
     pub access_token: String,
     pub refresh_token: Uuid,
     pub expires_at: String,
@@ -103,12 +103,18 @@ pub struct Auth {
     pub provider: Arc<dyn IdentityProvider>,
     storage: Arc<Storage>,
     jwt_helper: JwtHelper,
+    domain: Arc<String>,
 }
 
 impl Auth {
-    pub fn new<P: IdentityProvider + 'static>(provider: P, storage: Arc<Storage>) -> Self {
+    pub fn new<P: IdentityProvider + 'static>(
+        domain: Arc<String>,
+        provider: P,
+        storage: Arc<Storage>,
+    ) -> Self {
         let jwt_helper = JwtHelper::new_from_env().expect("Could not instantiate JwtHelper");
         Self {
+            domain,
             provider: Arc::new(provider),
             storage,
             jwt_helper,
@@ -120,7 +126,6 @@ impl Auth {
         req: LoginRequest,
         ip_address: &str,
         user_agent: &str,
-        domain: &str,
     ) -> Result<Json<LoginResponse>, AppError> {
         let (actor, uid) = self
             .provider
@@ -144,7 +149,7 @@ impl Auth {
             )
             .await?;
 
-        let actor_id = actor_url(domain, &uid);
+        let actor_id = actor_url(&self.domain, &uid);
         let inbox_url = format!("{}/inbox", actor_id);
         let outbox_url = format!("{}/outbox", actor_id);
         self.storage
@@ -161,7 +166,7 @@ impl Auth {
 
         let response = LoginResponse {
             uid: uid.clone(),
-            did: register.did,
+            did: register.did.to_url(&self.domain),
             access_token,
             refresh_token: register.refresh_token,
             expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
@@ -229,7 +234,7 @@ pub async fn login_handler(
 ) -> Result<Json<LoginResponse>, AppError> {
     state
         .auth
-        .login(req, &ip.to_string(), &user_agent.to_string(), &state.domain)
+        .login(req, &ip.to_string(), &user_agent.to_string())
         .await
 }
 

@@ -42,8 +42,8 @@ async fn test_get_user_actor() {
         "Outbox URL mismatch"
     );
     assert_eq!(
-        actor["keyBundle"],
-        format!("{}/users/{}/keys/bundle.json", app.domain, uid),
+        actor["devices"],
+        format!("{}/users/{}/deviceActions", app.domain, uid),
         "Key bundle URL mismatch"
     );
     assert_eq!(

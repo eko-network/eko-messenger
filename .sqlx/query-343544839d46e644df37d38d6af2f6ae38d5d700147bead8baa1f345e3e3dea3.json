@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT key_id, key, signature FROM signed_pre_keys WHERE did = $1",
+  "query": "\n            SELECT key_id, key, signature\n            FROM signed_pre_keys\n            WHERE did = $1\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -21,7 +21,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int4"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -30,5 +30,5 @@
       false
     ]
   },
-  "hash": "13cb417de77335bd5a6992b7a3fc9b62f456dddead8e619ec864b3f35fc8767f"
+  "hash": "343544839d46e644df37d38d6af2f6ae38d5d700147bead8baa1f345e3e3dea3"
 }
