@@ -1,3 +1,5 @@
+#![cfg(feature = "auth-firebase")]
+
 use eko_messenger::auth::{FirebaseAuth, IdentityProvider};
 use std::{env, sync::Arc};
 use tokio;
