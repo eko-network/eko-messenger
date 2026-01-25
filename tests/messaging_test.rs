@@ -7,21 +7,52 @@ use eko_messenger::auth::LoginResponse;
 use serde_json::Value;
 
 #[tokio::test]
-async fn test_send_and_receive_message_to_self() {
+async fn test_send_and_receive_message_between_devices_same_user() {
     let app = spawn_app().await;
     let client = &app.client;
-    let login = app.login_http("user@example.com", "password").await;
-    let did = login.did;
-    let auth_token = login.access_token;
-    let uid = login.uid;
+
+    // Register user and first device (sender)
+    let login_req_device1 =
+        generate_login_request("user@example.com".to_string(), "password".to_string());
+    let login_device1 = app
+        .login_http(&login_req_device1.email, &login_req_device1.password)
+        .await;
+    let uid = login_device1.uid.clone();
+    let did1 = login_device1.did;
+    let auth_token = login_device1.access_token;
     let actor_url = app.actor_url(&uid);
 
-    let outbox_url = format!("{}/outbox", &actor_url);
-    let message_content = "test message to self".to_string();
+    // Register second device for the same user (recipient)
+    let mut login_req_device2 =
+        generate_login_request("user@example.com".to_string(), "password".to_string());
+    login_req_device2.device_name = "test_device_2".to_string();
+    let login_url = format!("{}/auth/v1/login", &app.address);
+    let login_res_device2 = client
+        .post(&login_url)
+        .header("User-Agent", "test-client")
+        .json(&login_req_device2)
+        .send()
+        .await
+        .expect("HTTP Login for second device failed");
+    let login_body_device2 = login_res_device2.text().await.unwrap();
+    let login_device2: LoginResponse = serde_json::from_str(&login_body_device2)
+        .expect("Failed to parse login response for second device");
+    let did2 = login_device2.did;
+    let auth_token2 = login_device2.access_token;
 
+    // Ensure device IDs are different but belong to the same user
+    assert_ne!(
+        did1, did2,
+        "Device IDs for the same user should be different"
+    );
+
+    let outbox_url = format!("{}/outbox", &actor_url);
+    let message_content = "test message between devices".to_string();
+
+    // Sender: device1, Recipient: device2
     let encrypted_message_entry = EncryptedMessageEntry {
-        to: did.clone(),
-        from: did,
+        to: did2.clone(),
+        from: did1,
         content: message_content.as_bytes().to_vec(),
     };
 
@@ -65,7 +96,7 @@ async fn test_send_and_receive_message_to_self() {
     let inbox_url = format!("{}/inbox", actor_url);
     let inbox_res = client
         .get(&inbox_url)
-        .bearer_auth(&auth_token)
+        .bearer_auth(&auth_token2)
         .header("User-Agent", "test-client")
         .send()
         .await
