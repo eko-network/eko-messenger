@@ -10,16 +10,20 @@ pub mod notifications;
 pub mod storage;
 pub mod websocket;
 
+// TODO: there is probably a cleaner way to enforce one feature
+#[cfg(all(feature = "auth-firebase", feature = "auth-local"))]
+compile_error!("Cannot enable both 'auth-firebase' and 'auth-local' features");
+
+#[cfg(not(any(feature = "auth-firebase", feature = "auth-local")))]
+compile_error!("Must enable exactly one auth provider: 'auth-firebase' or 'auth-local'");
+
 use crate::{
     activitypub::{
         actor_handler, capabilities_handler, get_devices, get_inbox,
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
         post_to_outbox, webfinger_handler,
     },
-    auth::{
-        Auth, FirebaseAuth, LocalIdentityProvider, login_handler, logout_handler,
-        refresh_token_handler, signup_handler,
-    },
+    auth::{Auth, login_handler, logout_handler, refresh_token_handler, signup_handler},
     config::storage_config,
     devices::get_approval_status_handler,
     middleware::auth_middleware,
@@ -27,6 +31,12 @@ use crate::{
     storage::Storage,
     websocket::{WebSockets, ws_handler},
 };
+
+#[cfg(feature = "auth-firebase")]
+use crate::auth::FirebaseAuth;
+
+#[cfg(feature = "auth-local")]
+use crate::auth::LocalIdentityProvider;
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
@@ -97,20 +107,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let domain = Arc::new(var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port)));
     let storage = Arc::new(storage_config(domain.clone()).await?);
 
-    let client = reqwest::Client::new();
+    #[cfg(feature = "auth-firebase")]
+    let auth = {
+        let client = reqwest::Client::new();
+        let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client).await?;
+        Auth::new(domain.clone(), firebase_auth, storage.clone())
+    };
 
-    let auth_provider = var("AUTH_PROVIDER").unwrap_or_else(|_| "firebase".to_string());
-
-    let auth = match auth_provider.to_lowercase().as_str() {
-        "firebase" => {
-            let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone()).await?;
-            Auth::new(domain.clone(), firebase_auth, storage.clone())
-        }
-        "local" => {
-            let local_auth = LocalIdentityProvider::new(domain.clone(), storage.clone());
-            Auth::new(domain.clone(), local_auth, storage.clone())
-        }
-        _ => return Err(anyhow::anyhow!("Invalid AUTH_PROVIDER: {}", auth_provider).into()),
+    #[cfg(feature = "auth-local")]
+    let auth = {
+        let local_auth = LocalIdentityProvider::new(domain.clone(), storage.clone());
+        Auth::new(domain.clone(), local_auth, storage.clone())
     };
 
     let notification_service = NotificationService::new(storage.clone()).await?;

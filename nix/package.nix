@@ -1,4 +1,7 @@
-{pkgs}:
+{
+  pkgs,
+  authFeature ? "auth-local",
+}:
 pkgs.rustPlatform.buildRustPackage {
   pname = "eko-messenger";
   version = "0.1.0";
@@ -17,7 +20,9 @@ pkgs.rustPlatform.buildRustPackage {
     openssl
   ];
 
+  buildNoDefaultFeatures = true;
+  buildFeatures = [authFeature];
+
   SQLX_OFFLINE = "true";
   doCheck = false;
 }
-

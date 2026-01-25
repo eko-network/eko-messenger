@@ -5,7 +5,6 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-eko_messenger}
-      - AUTH_PROVIDER=${AUTH_PROVIDER:-local}
       - DOMAIN=${DOMAIN:-http://localhost:3000}
       - IP_SOURCE=${IP_SOURCE:-ConnectInfo}
       - JWT_SECRET=${JWT_SECRET}
