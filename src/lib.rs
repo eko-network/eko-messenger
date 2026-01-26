@@ -10,12 +10,21 @@ pub mod notifications;
 pub mod storage;
 pub mod websocket;
 
-// TODO: there is probably a cleaner way to enforce one feature
+// TODO: there may be a cleaner way to enforce exactly one auth provider feature
 #[cfg(all(feature = "auth-firebase", feature = "auth-local"))]
 compile_error!("Cannot enable both 'auth-firebase' and 'auth-local' features");
-
-#[cfg(not(any(feature = "auth-firebase", feature = "auth-local")))]
-compile_error!("Must enable exactly one auth provider: 'auth-firebase' or 'auth-local'");
+#[cfg(all(feature = "auth-firebase", feature = "auth-oidc"))]
+compile_error!("Cannot enable both 'auth-firebase' and 'auth-oidc' features");
+#[cfg(all(feature = "auth-local", feature = "auth-oidc"))]
+compile_error!("Cannot enable both 'auth-local' and 'auth-oidc' features");
+#[cfg(not(any(
+    feature = "auth-firebase",
+    feature = "auth-local",
+    feature = "auth-oidc"
+)))]
+compile_error!(
+    "Must enable exactly one auth provider: 'auth-firebase', 'auth-local', or 'auth-oidc'"
+);
 
 use crate::{
     activitypub::{
@@ -37,6 +46,12 @@ use crate::auth::FirebaseAuth;
 
 #[cfg(feature = "auth-local")]
 use crate::auth::LocalIdentityProvider;
+
+#[cfg(feature = "auth-oidc")]
+use crate::auth::{
+    OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
+    oidc_login_handler, oidc_providers_handler,
+};
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
@@ -61,6 +76,10 @@ pub struct AppState {
     pub storage: Arc<Storage>,
     pub sockets: WebSockets,
     pub notification_service: Arc<NotificationService>,
+    #[cfg(feature = "auth-oidc")]
+    pub oidc_provider: Option<Arc<OidcProvider>>,
+    #[cfg(not(feature = "auth-oidc"))]
+    pub oidc_provider: Option<()>,
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -79,14 +98,29 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
-    Ok(Router::new()
+
+    let mut router = Router::new()
         .route("/", get(root_handler))
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/signup", post(signup_handler))
         .route("/auth/v1/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{uid}", get(actor_handler))
-        .route("/.well-known/ecp", get(capabilities_handler))
+        .route("/.well-known/ecp", get(capabilities_handler));
+
+    #[cfg(feature = "auth-oidc")]
+    {
+        router = router
+            .route("/auth/v1/oidc/providers", get(oidc_providers_handler))
+            .route("/auth/v1/oidc/login/{provider}", get(oidc_login_handler))
+            .route(
+                "/auth/v1/oidc/callback/{provider}",
+                get(oidc_callback_handler),
+            )
+            .route("/auth/v1/oidc/complete", post(oidc_complete_handler));
+    }
+
+    Ok(router
         .merge(protected_routes)
         .layer(ip_source.into_extension())
         .with_state(app_state))
@@ -120,14 +154,27 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Auth::new(domain.clone(), local_auth, storage.clone())
     };
 
+    #[cfg(feature = "auth-oidc")]
+    let (auth, oidc_provider) = {
+        let oidc_provider =
+            Arc::new(OidcProvider::new_from_env(domain.clone(), storage.clone()).await?);
+        let oidc_identity = OidcIdentityProvider::new(domain.clone(), oidc_provider.clone());
+        let auth = Auth::new(domain.clone(), oidc_identity, storage.clone());
+        (auth, Some(oidc_provider))
+    };
+
+    #[cfg(not(feature = "auth-oidc"))]
+    let oidc_provider = None;
+
     let notification_service = NotificationService::new(storage.clone()).await?;
 
     let app_state = AppState {
-        domain: domain,
+        domain,
         auth: Arc::new(auth),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
         storage,
+        oidc_provider,
     };
 
     let app = app(app_state, ip_source)?;

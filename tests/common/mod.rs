@@ -203,6 +203,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         storage: storage.clone(),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
+        oidc_provider: None,
     };
 
     let app_router = app(app_state, "ConnectInfo".to_string())

@@ -35,7 +35,12 @@ impl IdentityProvider for LocalIdentityProvider {
             .await?
             .ok_or_else(|| AppError::Unauthorized("Invalid email or password".to_string()))?;
 
-        let parsed_hash = argon2::PasswordHash::new(&user.password_hash).map_err(|_| {
+        let password_hash = user
+            .password_hash
+            .as_ref()
+            .ok_or_else(|| AppError::Unauthorized("Invalid email or password".to_string()))?;
+
+        let parsed_hash = argon2::PasswordHash::new(password_hash).map_err(|_| {
             AppError::InternalError(anyhow::anyhow!("Invalid password hash format"))
         })?;
 

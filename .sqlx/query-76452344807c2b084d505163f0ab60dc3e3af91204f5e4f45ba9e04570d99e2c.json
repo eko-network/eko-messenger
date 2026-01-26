@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT uid, username, email, password_hash, created_at\n            FROM users\n            WHERE username = $1\n            ",
+  "query": "\n            SELECT uid, username, email, password_hash, created_at, oidc_issuer, oidc_sub\n            FROM users\n            WHERE oidc_issuer = $1 AND oidc_sub = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -27,10 +27,21 @@
         "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "oidc_issuer",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "oidc_sub",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
@@ -38,9 +49,11 @@
       false,
       false,
       false,
+      true,
       false,
-      false
+      true,
+      true
     ]
   },
-  "hash": "e1e139553fd278be59db71a23fbe309d6142e0206cdd7584f3e40705acec2d17"
+  "hash": "76452344807c2b084d505163f0ab60dc3e3af91204f5e4f45ba9e04570d99e2c"
 }
