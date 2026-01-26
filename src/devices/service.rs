@@ -16,19 +16,7 @@ impl DeviceService {
 
     /// List all device IDs for a user
     pub async fn list_device_ids(state: &AppState, uid: &str) -> Result<HashSet<String>, AppError> {
-        let actions = Self::get_device_actions_for_user(state, uid).await?;
-        let mut set = HashSet::new();
-
-        for action in actions {
-            match action {
-                DeviceAction::AddDevice(add_device) => {
-                    set.insert(add_device.did);
-                }
-                DeviceAction::RevokeDevice(revoke_device) => {
-                    set.remove(&revoke_device.did);
-                }
-            }
-        }
-        Ok(set)
+        let dids = state.storage.devices.get_approved_devices(uid).await?;
+        Ok(dids.into_iter().map(|v| v.to_url(&state.domain)).collect())
     }
 }

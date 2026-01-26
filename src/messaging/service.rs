@@ -20,6 +20,7 @@ impl MessagingService {
         state: &AppState,
         activity: &Create,
         sender_actor: &str,
+        sender_did: &DeviceId,
     ) -> Result<(), AppError> {
         // Iterate through all recipients
         for recipient_actor_id in &activity.object.to {
@@ -30,11 +31,45 @@ impl MessagingService {
                 .is_local_actor(recipient_actor_id)
                 .await?
             {
-                Self::deliver_local(state, &activity.object, sender_actor, recipient_actor_id)
-                    .await?;
+                Self::deliver_local(
+                    state,
+                    &activity.object,
+                    sender_actor,
+                    recipient_actor_id,
+                    sender_actor,
+                    sender_did,
+                )
+                .await?;
             } else {
                 Self::deliver_remote(state, activity, recipient_actor_id).await?;
             }
+        }
+
+        Ok(())
+    }
+
+    async fn validate_message_recipients(
+        to: &str,
+        from: &str,
+        from_did: &DeviceId,
+        message: &EncryptedMessage,
+        state: &AppState,
+    ) -> Result<(), AppError> {
+        let mut recipient_devices = crate::devices::DeviceService::list_device_ids(
+            state,
+            &crate::activitypub::actor_uid(to)?,
+        )
+        .await?;
+        let envelope_device_ids: HashSet<String> =
+            message.content.iter().map(|e| e.to.clone()).collect();
+
+        // if the message is from yourself it shouldn't be addressed to yourself
+        if to == from {
+            recipient_devices.remove(&from_did.to_url(&state.domain));
+        }
+
+        if envelope_device_ids != recipient_devices {
+            return Err(AppError::BadRequest("device_list_mismatch".to_string()));
         }
 
         Ok(())
@@ -46,25 +81,18 @@ impl MessagingService {
         message: &EncryptedMessage,
         sender_actor: &str,
         recipient_actor_id: &str,
+        sender_actor_id: &str,
+        sender_did: &DeviceId,
     ) -> Result<(), AppError> {
         // Validate envelope has correct device count for recipient
-        let envelope_device_ids: HashSet<String> =
-            message.content.iter().map(|e| e.to.clone()).collect();
-
-        let recipient_devices = crate::devices::DeviceService::list_device_ids(
+        Self::validate_message_recipients(
+            recipient_actor_id,
+            sender_actor_id,
+            sender_did,
+            message,
             state,
-            &crate::activitypub::actor_uid(recipient_actor_id)?,
         )
         .await?;
-
-        info!(
-            "envelope: {:?}, actual: {:?}",
-            envelope_device_ids, recipient_devices
-        );
-
-        if envelope_device_ids != recipient_devices {
-            return Err(AppError::BadRequest("device_list_mismatch".to_string()));
-        }
 
         let mut did_to_notif: Vec<_> = Vec::with_capacity(message.content.len());
 

@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    activitypub::{Create, EncryptedMessage, types::activity::Activity},
+    activitypub::{Create, EncryptedMessage, actor_url, types::activity::Activity},
     auth::Claims,
     devices::DeviceId,
     errors::AppError,
@@ -13,12 +13,13 @@ use axum::{
     response::IntoResponse,
 };
 use std::sync::Arc;
+use tracing::info;
 use uuid::Uuid;
 
 #[debug_handler]
 pub async fn post_to_outbox(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Arc<Claims>>,
+    Extension(claims): Extension<Arc<Claims>>,
     Json(payload): Json<Activity>,
 ) -> Result<impl IntoResponse, AppError> {
     match payload {
@@ -42,6 +43,12 @@ pub async fn post_to_outbox(
         }
         Activity::Create(payload) => {
             // TODO: message verification
+            if payload.actor != actor_url(&state.domain, &claims.sub) {
+                info!("{} sent device as {}", claims.sub, payload.actor);
+                return Err(AppError::Forbidden(
+                    "Messages may not be sent on behalf of other users".into(),
+                ));
+            }
             // These are now unused
             let message_id = format!("https://{}/messages/{}", state.domain, Uuid::new_v4());
             let activity_id = format!("https://{}/activities/{}", state.domain, Uuid::new_v4());
@@ -58,7 +65,13 @@ pub async fn post_to_outbox(
                     to: payload.object.to,
                 },
             };
-            MessagingService::process_outgoing_message(&state, &payload, &payload.actor).await?;
+            MessagingService::process_outgoing_message(
+                &state,
+                &payload,
+                &payload.actor,
+                &claims.did,
+            )
+            .await?;
 
             Ok((StatusCode::CREATED, Json(payload)).into_response())
         }
