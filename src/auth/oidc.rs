@@ -25,7 +25,7 @@ use openidconnect::{
 use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
 use serde_with::serde_as;
-use std::{env, sync::Arc};
+use std::{env, sync::Arc, time::Duration};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -37,6 +37,28 @@ pub struct OidcConfig {
     pub client_secret: String,
     pub redirect_url: String,
     pub provider_metadata: CoreProviderMetadata,
+}
+
+#[derive(Debug, Clone)]
+struct AuthState {
+    csrf_token: String,
+    nonce: String,
+    created_at: time::OffsetDateTime,
+}
+
+impl AuthState {
+    fn new(csrf_token: CsrfToken, nonce: Nonce) -> Self {
+        Self {
+            csrf_token: csrf_token.secret().clone(),
+            nonce: nonce.secret().clone(),
+            created_at: time::OffsetDateTime::now_utc(),
+        }
+    }
+
+    fn is_expired(&self, ttl: Duration) -> bool {
+        let elapsed = time::OffsetDateTime::now_utc() - self.created_at;
+        elapsed > time::Duration::seconds(ttl.as_secs() as i64)
+    }
 }
 
 impl OidcConfig {
@@ -75,6 +97,7 @@ pub struct OidcProvider {
     storage: Arc<Storage>,
     domain: Arc<String>,
     jwt_helper: JwtHelper,
+    auth_states: Arc<DashMap<String, AuthState>>,
 }
 
 impl OidcProvider {
@@ -106,6 +129,7 @@ impl OidcProvider {
             storage,
             domain,
             jwt_helper,
+            auth_states: Arc::new(DashMap::new()),
         })
     }
 
@@ -143,27 +167,66 @@ impl OidcProvider {
             .add_scope(Scope::new("profile".to_string()))
             .url();
 
+        // Store CSRF token and nonce for verification
+        let state_key = csrf_token.secret().clone();
+        let auth_state = AuthState::new(csrf_token.clone(), nonce.clone());
+        self.auth_states.insert(state_key, auth_state);
+
+        // Clean up expired states periodically
+        self.cleanup_expired_states();
+
         Ok((auth_url.to_string(), csrf_token, nonce))
+    }
+
+    fn cleanup_expired_states(&self) {
+        let ttl = Duration::from_secs(15 * 60);
+        self.auth_states.retain(|_, state| !state.is_expired(ttl));
+    }
+
+    fn verify_csrf_token(&self, csrf_token: &str) -> Result<String, AppError> {
+        let state = self
+            .auth_states
+            .get(csrf_token)
+            .ok_or_else(|| AppError::Unauthorized("Invalid or expired CSRF token".to_string()))?;
+
+        let ttl = Duration::from_secs(15 * 60);
+        if state.is_expired(ttl) {
+            self.auth_states.remove(csrf_token);
+            return Err(AppError::Unauthorized("CSRF token has expired".to_string()));
+        }
+
+        Ok(state.nonce.clone())
+    }
+
+    fn consume_auth_state(&self, csrf_token: &str) -> Result<(), AppError> {
+        self.auth_states.remove(csrf_token);
+        Ok(())
     }
 
     pub async fn exchange_code(
         &self,
         provider_name: &str,
         code: &str,
+        csrf_token: &str,
     ) -> Result<(String, String), AppError> {
+        // Verify CSRF token and retrieve stored nonce
+        let expected_nonce = self.verify_csrf_token(csrf_token)?;
+
         let config = self.configs.get(provider_name).ok_or_else(|| {
             AppError::NotFound(format!("Unknown OIDC provider: {}", provider_name))
         })?;
 
-        let client =
-            CoreClient::from_provider_metadata(
-                config.provider_metadata.clone(),
-                ClientId::new(config.client_id.clone()),
-                Some(ClientSecret::new(config.client_secret.clone())),
-            )
-            .set_redirect_uri(RedirectUrl::new(config.redirect_url.clone()).map_err(
-                |e| AppError::InternalError(anyhow::anyhow!("Invalid redirect URL: {}", e)),
-            )?);
+        let client_id = ClientId::new(config.client_id.clone());
+        let client_secret = ClientSecret::new(config.client_secret.clone());
+        let redirect_url = RedirectUrl::new(config.redirect_url.clone())
+            .map_err(|e| AppError::InternalError(anyhow::anyhow!("Invalid redirect URL: {}", e)))?;
+
+        let client = CoreClient::from_provider_metadata(
+            config.provider_metadata.clone(),
+            client_id.clone(),
+            Some(client_secret.clone()),
+        )
+        .set_redirect_uri(redirect_url.clone());
 
         let token_response = client
             .exchange_code(AuthorizationCode::new(code.to_string()))
@@ -182,35 +245,37 @@ impl OidcProvider {
             .id_token()
             .ok_or_else(|| AppError::InternalError(anyhow::anyhow!("No ID token in response")))?;
 
-        // TODO: Verify ID token signature using provider's JWKS
+        let expected_nonce_obj = Nonce::new(expected_nonce.clone());
 
-        let token_str = id_token.to_string();
-        let parts: Vec<&str> = token_str.split('.').collect();
-        if parts.len() != 3 {
-            return Err(AppError::InternalError(anyhow::anyhow!(
-                "Invalid ID token format"
-            )));
+        let id_token_claims = id_token
+            .claims(&client.id_token_verifier(), &expected_nonce_obj)
+            .map_err(|e| {
+                error!("ID token verification failed: {:?}", e);
+                AppError::Unauthorized(format!("Invalid ID token: {}", e))
+            })?;
+
+        if let Some(token_nonce) = id_token_claims.nonce() {
+            if token_nonce.secret() != &expected_nonce {
+                return Err(AppError::Unauthorized(
+                    "Nonce mismatch - possible replay attack".to_string(),
+                ));
+            }
+        } else {
+            return Err(AppError::Unauthorized(
+                "Nonce missing from ID token".to_string(),
+            ));
         }
 
-        let payload =
-            base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, parts[1])
-                .map_err(|e| {
-                    AppError::InternalError(anyhow::anyhow!("Failed to decode token: {}", e))
-                })?;
+        // Extract email and subject from verified claims
+        let email = id_token_claims
+            .email()
+            .map(|e| e.to_string())
+            .ok_or_else(|| AppError::BadRequest("Email not provided by IdP".to_string()))?;
 
-        let claims: serde_json::Value = serde_json::from_slice(&payload).map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to parse token: {}", e))
-        })?;
+        let sub = id_token_claims.subject().to_string();
 
-        let email = claims["email"]
-            .as_str()
-            .ok_or_else(|| AppError::BadRequest("Email not provided by IdP".to_string()))?
-            .to_string();
-
-        let sub = claims["sub"]
-            .as_str()
-            .ok_or_else(|| AppError::BadRequest("Subject not provided by IdP".to_string()))?
-            .to_string();
+        // Consume the auth state to prevent reuse
+        self.consume_auth_state(csrf_token)?;
 
         Ok((email, sub))
     }
@@ -236,10 +301,8 @@ impl OidcProvider {
             return Ok((user.uid, user.username));
         }
 
-        // Generate username from email
+        // TODO: allow users to pick username, should that happen here in the flow?
         let username = email.split('@').next().unwrap_or("user").to_string();
-
-        // Ensure unique username
         let mut final_username = username.clone();
         let mut counter = 1;
         while self
@@ -289,7 +352,8 @@ impl OidcProvider {
             iat: now.unix_timestamp() as usize,
         };
 
-        let secret = env::var("JWT_SECRET").expect("JWT_SECRET not set");
+        let secret = env::var("JWT_SECRET")
+            .map_err(|_| AppError::InternalError(anyhow::anyhow!("JWT_SECRET not set")))?;
         let token = encode(
             &Header::default(),
             &claims,
@@ -313,7 +377,8 @@ impl OidcProvider {
             uid: String,
         }
 
-        let secret = env::var("JWT_SECRET").expect("JWT_SECRET not set");
+        let secret = env::var("JWT_SECRET")
+            .map_err(|_| AppError::InternalError(anyhow::anyhow!("JWT_SECRET not set")))?;
         let token_data = decode::<VerificationClaims>(
             token,
             &DecodingKey::from_secret(secret.as_bytes()),
@@ -526,8 +591,6 @@ pub async fn oidc_login_handler(
 
     let (login_url, csrf_token, _nonce) = oidc.start_auth(&provider)?;
 
-    // TODO: Store nonce to verify when validating the ID token
-
     Ok(Json(OidcLoginResponse {
         login_url,
         state: csrf_token.secret().clone(),
@@ -544,9 +607,17 @@ pub async fn oidc_callback_handler(
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
 
-    let _ = query.state;
+    // Verify CSRF token is provided
+    if query.state.is_empty() {
+        return Err(AppError::Unauthorized(
+            "CSRF token (state) is required".to_string(),
+        ));
+    }
 
-    let (email, sub) = oidc.exchange_code(&provider, &query.code).await?;
+    // Exchange code and verify CSRF token + nonce + ID token signature
+    let (email, sub) = oidc
+        .exchange_code(&provider, &query.code, &query.state)
+        .await?;
 
     let (uid, _username) = oidc.get_or_create_user(&provider, &email, &sub).await?;
 
