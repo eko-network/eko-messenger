@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    activitypub::{Activity, actor_url, types::generate_create},
+    activitypub::{Activity, OrderedCollection, actor_url, types::generate_create},
     auth::Claims,
     errors::AppError,
 };
@@ -20,7 +20,7 @@ use tracing::info;
 pub async fn get_inbox(
     State(state): State<AppState>,
     Extension(claims): Extension<Arc<Claims>>,
-) -> Result<Json<Vec<Activity>>, AppError> {
+) -> Result<Json<OrderedCollection<Activity>>, AppError> {
     let uid = &claims.sub;
     let did = claims.did;
     let actor_id = actor_url(&state.domain, uid);
@@ -35,24 +35,23 @@ pub async fn get_inbox(
 
     info!("returned {} items to {}", items.len(), uid);
 
-    // TODO probably need to do some checks, and deletions here when sent to the user
+    let activities: Vec<Activity> = items
+        .into_iter()
+        .map(|i| {
+            generate_create(
+                actor_id.clone(),
+                i.actor_id.clone(),
+                did.to_url(&state.domain),
+                i.from_did,
+                i.content,
+            )
+        })
+        .collect();
 
-    // TODO make this a little less jank
+    let inbox_url = format!("{}/inbox", actor_id);
+    let collection = OrderedCollection::new(inbox_url, activities);
 
-    Ok(Json(
-        items
-            .into_iter()
-            .map(|i| {
-                generate_create(
-                    actor_id.clone(),
-                    i.actor_id.clone(),
-                    did.to_url(&state.domain),
-                    i.from_did,
-                    i.content,
-                )
-            })
-            .collect(),
-    ))
+    Ok(Json(collection))
 }
 
 /// POST /users/:uid/inbox
