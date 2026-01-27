@@ -2,6 +2,7 @@
 pub mod firebase;
 pub mod handlers;
 pub mod jwt;
+pub mod provider;
 
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
@@ -14,6 +15,8 @@ pub use handlers::{
     refresh_token_handler, signup_handler,
 };
 pub use jwt::{Claims, JwtHelper};
+
+pub use provider::{OidcProviderState, add_oidc_routes, build_auth};
 
 #[cfg(feature = "auth-oidc")]
 pub use oidc::{

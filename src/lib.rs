@@ -10,33 +10,22 @@ pub mod notifications;
 pub mod storage;
 pub mod websocket;
 
-#[cfg(all(feature = "auth-firebase", feature = "auth-oidc"))]
-compile_error!("Cannot enable both 'auth-firebase' and 'auth-oidc' features");
-#[cfg(not(any(feature = "auth-firebase", feature = "auth-oidc")))]
-compile_error!("Must enable exactly one auth provider: 'auth-firebase' or 'auth-oidc'");
-
 use crate::{
     activitypub::{
         actor_handler, capabilities_handler, get_devices, get_inbox,
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
         post_to_outbox, webfinger_handler,
     },
-    auth::{Auth, login_handler, logout_handler, refresh_token_handler, signup_handler},
+    auth::{
+        Auth, OidcProviderState, add_oidc_routes, build_auth, login_handler, logout_handler,
+        refresh_token_handler, signup_handler,
+    },
     config::storage_config,
     devices::get_approval_status_handler,
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
     websocket::{WebSockets, ws_handler},
-};
-
-#[cfg(feature = "auth-firebase")]
-use crate::auth::FirebaseAuth;
-
-#[cfg(feature = "auth-oidc")]
-use crate::auth::{
-    OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
-    oidc_login_handler, oidc_providers_handler,
 };
 use axum::middleware::from_fn_with_state;
 use axum::{
@@ -62,10 +51,7 @@ pub struct AppState {
     pub storage: Arc<Storage>,
     pub sockets: WebSockets,
     pub notification_service: Arc<NotificationService>,
-    #[cfg(feature = "auth-oidc")]
-    pub oidc_provider: Option<Arc<OidcProvider>>,
-    #[cfg(not(feature = "auth-oidc"))]
-    pub oidc_provider: Option<()>,
+    pub oidc_provider: OidcProviderState,
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -85,7 +71,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
 
-    let mut router = Router::new()
+    let router = Router::new()
         .route("/", get(root_handler))
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/signup", post(signup_handler))
@@ -93,18 +79,7 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{uid}", get(actor_handler))
         .route("/.well-known/ecp", get(capabilities_handler));
-
-    #[cfg(feature = "auth-oidc")]
-    {
-        router = router
-            .route("/auth/v1/oidc/providers", get(oidc_providers_handler))
-            .route("/auth/v1/oidc/login/{provider}", get(oidc_login_handler))
-            .route(
-                "/auth/v1/oidc/callback/{provider}",
-                get(oidc_callback_handler),
-            )
-            .route("/auth/v1/oidc/complete", post(oidc_complete_handler));
-    }
+    let router = add_oidc_routes(router);
 
     Ok(router
         .merge(protected_routes)
@@ -127,24 +102,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let domain = Arc::new(var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port)));
     let storage = Arc::new(storage_config(domain.clone()).await?);
 
-    #[cfg(feature = "auth-firebase")]
-    let auth = {
-        let client = reqwest::Client::new();
-        let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client).await?;
-        Auth::new(domain.clone(), firebase_auth, storage.clone())
-    };
-
-    #[cfg(feature = "auth-oidc")]
-    let (auth, oidc_provider) = {
-        let oidc_provider =
-            Arc::new(OidcProvider::new_from_env(domain.clone(), storage.clone()).await?);
-        let oidc_identity = OidcIdentityProvider::new(domain.clone(), oidc_provider.clone());
-        let auth = Auth::new(domain.clone(), oidc_identity, storage.clone());
-        (auth, Some(oidc_provider))
-    };
-
-    #[cfg(not(feature = "auth-oidc"))]
-    let oidc_provider = None;
+    let (auth, oidc_provider) = build_auth(domain.clone(), storage.clone()).await?;
 
     let notification_service = NotificationService::new(storage.clone()).await?;
 
