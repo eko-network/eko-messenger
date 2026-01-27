@@ -146,7 +146,7 @@ impl MessagingService {
     ) -> Result<bool, AppError> {
         // Check if the recipient device is online
         if let Some(sender) = state.sockets.get(&did) {
-            debug!(
+            info!(
                 "{} - {} online, trying to send via socket",
                 recipient_actor_id, entry.to
             );
