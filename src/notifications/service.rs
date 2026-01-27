@@ -2,6 +2,7 @@ use std::{env::var, sync::Arc};
 
 use anyhow::Context;
 use futures::future::join_all;
+use tracing::info;
 use web_push::{
     ContentEncoding, HyperWebPushClient, PartialVapidSignatureBuilder, SubscriptionInfo,
     VapidSignatureBuilder, WebPushClient, WebPushMessageBuilder,
@@ -47,8 +48,9 @@ impl NotificationService {
         Ok(())
     }
     pub async fn notify(&self, dids: &[DeviceId]) -> Result<(), AppError> {
+        info!("Sending {} notifications", dids.len());
         let endpoints = self.storage.notifications.retrive_endpoints(dids).await?;
-        join_all(endpoints.into_iter().map(|sub| {
+        join_all(endpoints.into_iter().map(|(sub, did)| {
             let client = self.client.clone();
             let vapid = self.vapid.clone();
             async move {
@@ -66,9 +68,10 @@ impl NotificationService {
                 };
                 if let Err(e) = client.send(payload).await {
                     tracing::error!("POST failed: {e}");
+                    let _ = self.storage.notifications.delete_endpoint(did).await;
                     return;
                 }
-                tracing::info!("Sent Notification")
+                tracing::debug!("Sent Notification to: {}", did)
             }
         }))
         .await;

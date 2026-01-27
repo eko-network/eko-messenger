@@ -92,10 +92,11 @@ pub trait NotificationStore: Send + Sync {
         did: DeviceId,
         endpoint: &web_push::SubscriptionInfo,
     ) -> Result<(), AppError>;
+    async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError>;
     async fn retrive_endpoints(
         &self,
         dids: &[DeviceId],
-    ) -> Result<Vec<web_push::SubscriptionInfo>, AppError>;
+    ) -> Result<Vec<(web_push::SubscriptionInfo, DeviceId)>, AppError>;
 }
 
 #[async_trait]

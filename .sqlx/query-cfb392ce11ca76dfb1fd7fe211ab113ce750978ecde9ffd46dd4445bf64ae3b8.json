@@ -1,20 +1,25 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT endpoint, p256dh, auth from notifications WHERE did = ANY($1)\n            ",
+  "query": "\n            SELECT did, endpoint, p256dh, auth from notifications WHERE did = ANY($1)\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "did",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
         "name": "endpoint",
         "type_info": "Text"
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "p256dh",
         "type_info": "Text"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "auth",
         "type_info": "Text"
       }
@@ -27,8 +32,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "68099e99a20d80610a2be0242e21f6f3ec24ecc3710c9b6bcdeb5b25e97c0180"
+  "hash": "cfb392ce11ca76dfb1fd7fe211ab113ce750978ecde9ffd46dd4445bf64ae3b8"
 }
