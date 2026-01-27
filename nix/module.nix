@@ -39,8 +39,8 @@ in {
     };
 
     authProvider = lib.mkOption {
-      type = lib.types.enum ["local" "firebase"];
-      default = "local";
+      type = lib.types.enum ["oidc" "firebase"];
+      default = "oidc";
       description = "The identity provider to use for authentication";
     };
 

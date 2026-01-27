@@ -115,14 +115,6 @@ pub trait UserStore: Send + Sync {
         username: &str,
     ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
 
-    async fn create_user(
-        &self,
-        uid: &str,
-        username: &str,
-        email: &str,
-        password_hash: &str,
-    ) -> Result<(), AppError>;
-
     async fn get_user_by_oidc(
         &self,
         oidc_issuer: &str,

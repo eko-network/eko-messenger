@@ -47,8 +47,7 @@ pub struct StoredUser {
     pub uid: String,
     pub username: String,
     pub email: String,
-    pub password_hash: Option<String>,
-    pub created_at: OffsetDateTime,
     pub oidc_issuer: Option<String>,
     pub oidc_sub: Option<String>,
+    pub created_at: OffsetDateTime,
 }

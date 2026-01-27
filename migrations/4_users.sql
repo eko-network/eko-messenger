@@ -2,10 +2,9 @@ CREATE TABLE users (
   uid TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE NOT NULL,
-  password_hash TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   oidc_issuer TEXT,
-  oidc_sub TEXT
+  oidc_sub TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX idx_users_oidc_identity 

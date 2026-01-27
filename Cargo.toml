@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["auth-local"]
+default = ["auth-oidc"]
 auth-firebase = ["dep:gcp_auth"]
-auth-local = ["dep:argon2"]
 auth-oidc = ["dep:openidconnect"]
 integration-firebase = []
 
@@ -43,7 +42,6 @@ web-push = { version = "0.11.0", default-features = false, features = [
 ] }
 openssl = "0.10.75"
 base64 = "0.22.1"
-argon2 = { version = "0.5.3", optional = true }
 openidconnect = { version = "4.0", optional = true }
 
 [dev-dependencies]

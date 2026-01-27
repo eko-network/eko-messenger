@@ -21,7 +21,7 @@ impl UserStore for PostgresUserStore {
         let user = sqlx::query_as!(
             StoredUser,
             r#"
-            SELECT uid, username, email, password_hash, created_at, oidc_issuer, oidc_sub
+            SELECT uid, username, email, oidc_issuer, oidc_sub, created_at
             FROM users
             WHERE email = $1
             "#,
@@ -37,7 +37,7 @@ impl UserStore for PostgresUserStore {
         let user = sqlx::query_as!(
             StoredUser,
             r#"
-            SELECT uid, username, email, password_hash, created_at, oidc_issuer, oidc_sub
+            SELECT uid, username, email, oidc_issuer, oidc_sub, created_at
             FROM users
             WHERE uid = $1
             "#,
@@ -53,7 +53,7 @@ impl UserStore for PostgresUserStore {
         let user = sqlx::query_as!(
             StoredUser,
             r#"
-            SELECT uid, username, email, password_hash, created_at, oidc_issuer, oidc_sub
+            SELECT uid, username, email, oidc_issuer, oidc_sub, created_at
             FROM users
             WHERE username = $1
             "#,
@@ -65,29 +65,6 @@ impl UserStore for PostgresUserStore {
         Ok(user)
     }
 
-    async fn create_user(
-        &self,
-        uid: &str,
-        username: &str,
-        email: &str,
-        password_hash: &str,
-    ) -> Result<(), AppError> {
-        sqlx::query!(
-            r#"
-            INSERT INTO users (uid, username, email, password_hash)
-            VALUES ($1, $2, $3, $4)
-            "#,
-            uid,
-            username,
-            email,
-            password_hash
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
     async fn get_user_by_oidc(
         &self,
         oidc_issuer: &str,
@@ -96,7 +73,7 @@ impl UserStore for PostgresUserStore {
         let user = sqlx::query_as!(
             StoredUser,
             r#"
-            SELECT uid, username, email, password_hash, created_at, oidc_issuer, oidc_sub
+            SELECT uid, username, email, oidc_issuer, oidc_sub, created_at
             FROM users
             WHERE oidc_issuer = $1 AND oidc_sub = $2
             "#,

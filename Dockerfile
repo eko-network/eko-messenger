@@ -7,12 +7,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-ARG AUTH_FEATURE=auth-local
-
 COPY . .
 
 ENV SQLX_OFFLINE=true
-RUN cargo build --release --no-default-features --features ${AUTH_FEATURE}
+RUN cargo build --release
 
 
 FROM debian:bookworm-slim

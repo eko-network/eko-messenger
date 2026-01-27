@@ -3,9 +3,6 @@ pub mod firebase;
 pub mod handlers;
 pub mod jwt;
 
-#[cfg(feature = "auth-local")]
-pub mod local;
-
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
 
@@ -17,9 +14,6 @@ pub use handlers::{
     refresh_token_handler, signup_handler,
 };
 pub use jwt::{Claims, JwtHelper};
-
-#[cfg(feature = "auth-local")]
-pub use local::LocalIdentityProvider;
 
 #[cfg(feature = "auth-oidc")]
 pub use oidc::{

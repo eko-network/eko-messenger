@@ -10,21 +10,10 @@ pub mod notifications;
 pub mod storage;
 pub mod websocket;
 
-// TODO: there may be a cleaner way to enforce exactly one auth provider feature
-#[cfg(all(feature = "auth-firebase", feature = "auth-local"))]
-compile_error!("Cannot enable both 'auth-firebase' and 'auth-local' features");
 #[cfg(all(feature = "auth-firebase", feature = "auth-oidc"))]
 compile_error!("Cannot enable both 'auth-firebase' and 'auth-oidc' features");
-#[cfg(all(feature = "auth-local", feature = "auth-oidc"))]
-compile_error!("Cannot enable both 'auth-local' and 'auth-oidc' features");
-#[cfg(not(any(
-    feature = "auth-firebase",
-    feature = "auth-local",
-    feature = "auth-oidc"
-)))]
-compile_error!(
-    "Must enable exactly one auth provider: 'auth-firebase', 'auth-local', or 'auth-oidc'"
-);
+#[cfg(not(any(feature = "auth-firebase", feature = "auth-oidc")))]
+compile_error!("Must enable exactly one auth provider: 'auth-firebase' or 'auth-oidc'");
 
 use crate::{
     activitypub::{
@@ -43,9 +32,6 @@ use crate::{
 
 #[cfg(feature = "auth-firebase")]
 use crate::auth::FirebaseAuth;
-
-#[cfg(feature = "auth-local")]
-use crate::auth::LocalIdentityProvider;
 
 #[cfg(feature = "auth-oidc")]
 use crate::auth::{
@@ -146,12 +132,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let client = reqwest::Client::new();
         let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client).await?;
         Auth::new(domain.clone(), firebase_auth, storage.clone())
-    };
-
-    #[cfg(feature = "auth-local")]
-    let auth = {
-        let local_auth = LocalIdentityProvider::new(domain.clone(), storage.clone());
-        Auth::new(domain.clone(), local_auth, storage.clone())
     };
 
     #[cfg(feature = "auth-oidc")]
