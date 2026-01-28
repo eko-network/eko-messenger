@@ -8,7 +8,7 @@ use crate::{
 };
 use axum::{
     Json, debug_handler,
-    extract::{Extension, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -19,9 +19,16 @@ use uuid::Uuid;
 #[debug_handler]
 pub async fn post_to_outbox(
     State(state): State<AppState>,
+    Path(uid): Path<String>,
     Extension(claims): Extension<Arc<Claims>>,
     Json(payload): Json<Activity>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Verify the authenticated user matches the outbox owner
+    if claims.sub != uid {
+        return Err(AppError::Forbidden(
+            "Cannot post to another user's outbox".to_string(),
+        ));
+    }
     match payload {
         Activity::Take(payload) => {
             if !payload.target.ends_with("/keyCollection") {
