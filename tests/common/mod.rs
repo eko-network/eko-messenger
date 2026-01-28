@@ -1,4 +1,9 @@
-use async_trait::async_trait;
+mod assertions;
+mod fixtures;
+
+pub use assertions::*;
+pub use fixtures::*;
+
 use dashmap::DashMap;
 #[cfg(feature = "auth-firebase")]
 use eko_messenger::auth::FirebaseAuth;
@@ -59,70 +64,18 @@ fn selected_storage_backend() -> StorageBackend {
     }
 }
 
-#[derive(Clone)]
-pub struct TestIdentityProvider {
-    domain: Arc<String>,
-}
+pub fn generate_login_request(
+    email: String,
+    password: String,
+    device_name: Option<&str>,
+) -> LoginRequest {
+    let device_name = device_name.unwrap_or("test_device");
 
-impl TestIdentityProvider {
-    pub fn new(domain: Arc<String>) -> Self {
-        Self { domain }
-    }
-}
-
-fn uid_from_email(email: &str) -> String {
-    let uid: String = email
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect();
-    if uid.is_empty() {
-        "testuser".to_string()
-    } else {
-        uid
-    }
-}
-
-#[async_trait]
-impl IdentityProvider for TestIdentityProvider {
-    async fn login_with_email(
-        &self,
-        email: String,
-        _password: String,
-    ) -> Result<(eko_messenger::activitypub::Person, String), eko_messenger::errors::AppError> {
-        let uid = uid_from_email(&email);
-        let person = self.person_from_uid(&uid).await?;
-        Ok((person, uid))
-    }
-
-    async fn person_from_uid(
-        &self,
-        uid: &str,
-    ) -> Result<eko_messenger::activitypub::Person, eko_messenger::errors::AppError> {
-        use eko_messenger::activitypub::create_person;
-        Ok(create_person(
-            &self.domain,
-            uid,
-            Some("Test user".to_string()),
-            uid.to_string(),
-            Some("Test User".to_string()),
-            None,
-        ))
-    }
-
-    async fn uid_from_username(
-        &self,
-        username: &str,
-    ) -> Result<String, eko_messenger::errors::AppError> {
-        // In test mode, username is the uid
-        Ok(username.to_string())
-    }
-}
-
-pub fn generate_login_request(email: String, password: String) -> LoginRequest {
+    // FIXME keys and things need to be fixed
     LoginRequest {
         email,
         password,
-        device_name: "test_device".to_string(),
+        device_name: device_name.to_string(),
         identity_key: vec![1, 2, 3],
         registration_id: 123,
         pre_keys: vec![PreKey {
@@ -178,6 +131,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
 
     let client = reqwest::Client::new();
 
+    // FIXME got to pull eric's pr
     let auth_service = match options.identity {
         IdentityBackend::Test => Auth::new(
             domain.clone(),
@@ -231,8 +185,31 @@ impl TestApp {
         format!("{}/users/{}", self.domain, uid)
     }
 
+    pub async fn signup_http(&self, username: &str, email: &str, password: &str) {
+        use serde_json::json;
+
+        let signup_url = format!("{}/auth/v1/signup", &self.address);
+        let signup_body = json!({
+            "username": username,
+            "email": email,
+            "password": password,
+        });
+
+        let signup_res = self
+            .client
+            .post(&signup_url)
+            .header("User-Agent", "test-client")
+            .json(&signup_body)
+            .send()
+            .await
+            .expect("HTTP Signup failed");
+
+        let status = signup_res.status();
+        assert!(status.is_success(), "Signup failed with status {}", status);
+    }
+
     pub async fn login_http(&self, email: &str, password: &str) -> LoginResponse {
-        let login_req = generate_login_request(email.to_string(), password.to_string());
+        let login_req = generate_login_request(email.to_string(), password.to_string(), None);
         let login_url = format!("{}/auth/v1/login", &self.address);
 
         let login_res = self

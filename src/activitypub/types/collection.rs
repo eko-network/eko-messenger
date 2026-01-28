@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::activitypub::types::ACTIVITY_STREAMS_CONTEXT;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +15,7 @@ pub struct OrderedCollection<T> {
 
 impl<T> OrderedCollection<T> {
     pub fn new(id: String, items: Vec<T>) -> Self {
+        // TODO probably should be ordered by sent time or smth
         let total = items.len();
         Self {
             context: ACTIVITY_STREAMS_CONTEXT.to_string(),
