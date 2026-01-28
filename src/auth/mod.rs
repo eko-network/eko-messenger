@@ -1,8 +1,13 @@
+#[cfg(feature = "auth-firebase")]
 pub mod firebase;
 pub mod handlers;
 pub mod jwt;
-pub mod local;
+pub mod provider;
 
+#[cfg(feature = "auth-oidc")]
+pub mod oidc;
+
+#[cfg(feature = "auth-firebase")]
 pub use firebase::FirebaseAuth;
 pub use handlers::{
     Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, REFRESH_EXPIRATION,
@@ -10,4 +15,11 @@ pub use handlers::{
     refresh_token_handler, signup_handler,
 };
 pub use jwt::{Claims, JwtHelper};
-pub use local::LocalIdentityProvider;
+
+pub use provider::{OidcProviderState, add_oidc_routes, build_auth};
+
+#[cfg(feature = "auth-oidc")]
+pub use oidc::{
+    OidcConfig, OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
+    oidc_login_handler,
+};

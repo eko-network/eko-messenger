@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
+#[cfg(feature = "auth-firebase")]
+use eko_messenger::auth::FirebaseAuth;
 use eko_messenger::{
     AppState, app,
-    auth::{
-        Auth, FirebaseAuth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey,
-    },
+    auth::{Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey},
     notifications::NotificationService,
     storage::{Storage, postgres::connection::postgres_storage},
 };
@@ -30,6 +30,7 @@ pub enum StorageBackend {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityBackend {
     Test,
+    #[cfg(feature = "auth-firebase")]
     Firebase,
 }
 
@@ -183,6 +184,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
             TestIdentityProvider::new(domain.clone()),
             storage.clone(),
         ),
+        #[cfg(feature = "auth-firebase")]
         IdentityBackend::Firebase => {
             let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone())
                 .await
@@ -201,6 +203,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         storage: storage.clone(),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
+        oidc_provider: None,
     };
 
     let app_router = app(app_state, "ConnectInfo".to_string())

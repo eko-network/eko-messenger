@@ -16,7 +16,13 @@ in {
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default or (pkgs.callPackage ./package.nix {});
+      default = let
+        system = pkgs.stdenv.hostPlatform.system;
+        packages = self.packages.${system} or {};
+      in
+        if cfg.authProvider == "firebase"
+        then packages.firebase or (pkgs.callPackage ./package.nix {authFeature = "auth-firebase";})
+        else packages.default or (pkgs.callPackage ./package.nix {});
       description = "The eko-messenger package to use";
     };
 
@@ -33,8 +39,8 @@ in {
     };
 
     authProvider = lib.mkOption {
-      type = lib.types.enum ["local" "firebase"];
-      default = "local";
+      type = lib.types.enum ["oidc" "firebase"];
+      default = "oidc";
       description = "The identity provider to use for authentication";
     };
 
@@ -154,7 +160,6 @@ in {
           IP_SOURCE = cfg.ipSource;
           LISTEN_ADDR = cfg.listenAddr;
           RUST_LOG = cfg.logLevel;
-          AUTH_PROVIDER = cfg.authProvider;
           JWT_SECRET = cfg.jwtSecret;
           VAPID_KEY_PATH = cfg.vapidKeyPath;
         }

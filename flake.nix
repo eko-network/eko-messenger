@@ -26,6 +26,10 @@
         };
       in {
         default = import ./nix/package.nix {inherit pkgs;};
+        firebase = import ./nix/package.nix {
+          inherit pkgs;
+          authFeature = "auth-firebase";
+        };
       }
     );
 

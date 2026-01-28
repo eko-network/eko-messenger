@@ -5,12 +5,15 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-eko_messenger}
-      - AUTH_PROVIDER=${AUTH_PROVIDER:-local}
       - DOMAIN=${DOMAIN:-http://localhost:3000}
       - IP_SOURCE=${IP_SOURCE:-ConnectInfo}
       - JWT_SECRET=${JWT_SECRET}
       - LISTEN_ADDR=0.0.0.0
       - RUST_LOG=${RUST_LOG:-info}
+      - OIDC_ISSUER=${OIDC_ISSUER}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL}
     volumes:
       - app_data:/app/data
     restart: unless-stopped

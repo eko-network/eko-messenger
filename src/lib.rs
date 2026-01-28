@@ -17,7 +17,7 @@ use crate::{
         post_to_outbox, webfinger_handler,
     },
     auth::{
-        Auth, FirebaseAuth, LocalIdentityProvider, login_handler, logout_handler,
+        Auth, OidcProviderState, add_oidc_routes, build_auth, login_handler, logout_handler,
         refresh_token_handler, signup_handler,
     },
     config::storage_config,
@@ -51,6 +51,7 @@ pub struct AppState {
     pub storage: Arc<Storage>,
     pub sockets: WebSockets,
     pub notification_service: Arc<NotificationService>,
+    pub oidc_provider: OidcProviderState,
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -69,14 +70,18 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         // you can add more routes here
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
-    Ok(Router::new()
+
+    let router = Router::new()
         .route("/", get(root_handler))
         .route("/auth/v1/login", post(login_handler))
         .route("/auth/v1/signup", post(signup_handler))
         .route("/auth/v1/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{uid}", get(actor_handler))
-        .route("/.well-known/ecp", get(capabilities_handler))
+        .route("/.well-known/ecp", get(capabilities_handler));
+    let router = add_oidc_routes(router);
+
+    Ok(router
         .merge(protected_routes)
         .layer(ip_source.into_extension())
         .with_state(app_state))
@@ -97,30 +102,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let domain = Arc::new(var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port)));
     let storage = Arc::new(storage_config(domain.clone()).await?);
 
-    let client = reqwest::Client::new();
-
-    let auth_provider = var("AUTH_PROVIDER").unwrap_or_else(|_| "firebase".to_string());
-
-    let auth = match auth_provider.to_lowercase().as_str() {
-        "firebase" => {
-            let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone()).await?;
-            Auth::new(domain.clone(), firebase_auth, storage.clone())
-        }
-        "local" => {
-            let local_auth = LocalIdentityProvider::new(domain.clone(), storage.clone());
-            Auth::new(domain.clone(), local_auth, storage.clone())
-        }
-        _ => return Err(anyhow::anyhow!("Invalid AUTH_PROVIDER: {}", auth_provider).into()),
-    };
+    let (auth, oidc_provider) = build_auth(domain.clone(), storage.clone()).await?;
 
     let notification_service = NotificationService::new(storage.clone()).await?;
 
     let app_state = AppState {
-        domain: domain,
+        domain,
         auth: Arc::new(auth),
         sockets: Arc::new(DashMap::new()),
         notification_service: Arc::new(notification_service),
         storage,
+        oidc_provider,
     };
 
     let app = app(app_state, ip_source)?;

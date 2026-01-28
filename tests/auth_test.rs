@@ -1,3 +1,5 @@
+#![cfg(feature = "auth-firebase")]
+
 mod common;
 use common::{generate_login_request, spawn_app};
 use eko_messenger::auth::{Auth, FirebaseAuth};
