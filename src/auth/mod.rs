@@ -21,5 +21,5 @@ pub use provider::{OidcProviderState, add_oidc_routes, build_auth};
 #[cfg(feature = "auth-oidc")]
 pub use oidc::{
     OidcConfig, OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
-    oidc_login_handler, oidc_providers_handler,
+    oidc_login_handler,
 };

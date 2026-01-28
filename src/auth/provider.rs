@@ -3,7 +3,7 @@ use crate::auth::FirebaseAuth;
 #[cfg(feature = "auth-oidc")]
 use crate::auth::{
     OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
-    oidc_login_handler, oidc_providers_handler,
+    oidc_login_handler,
 };
 use crate::{AppState, auth::Auth, storage::Storage};
 use axum::{
@@ -48,12 +48,8 @@ pub fn add_oidc_routes(router: Router<AppState>) -> Router<AppState> {
     #[cfg(feature = "auth-oidc")]
     {
         router
-            .route("/auth/v1/oidc/providers", get(oidc_providers_handler))
-            .route("/auth/v1/oidc/login/{provider}", get(oidc_login_handler))
-            .route(
-                "/auth/v1/oidc/callback/{provider}",
-                get(oidc_callback_handler),
-            )
+            .route("/auth/v1/oidc/login", get(oidc_login_handler))
+            .route("/auth/v1/oidc/callback", get(oidc_callback_handler))
             .route("/auth/v1/oidc/complete", post(oidc_complete_handler))
     }
 

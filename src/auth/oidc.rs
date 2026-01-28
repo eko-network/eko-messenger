@@ -31,7 +31,6 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct OidcConfig {
-    pub name: String,
     pub issuer_url: String,
     pub client_id: String,
     pub client_secret: String,
@@ -62,26 +61,37 @@ impl AuthState {
 }
 
 impl OidcConfig {
-    pub async fn from_env(name: &str, http_client: &reqwest::Client) -> anyhow::Result<Self> {
-        let prefix = format!("OIDC_{}", name.to_uppercase());
+    pub async fn from_env(http_client: &reqwest::Client) -> anyhow::Result<Self> {
+        let issuer = env::var("OIDC_ISSUER").map_err(|_| anyhow::anyhow!("OIDC_ISSUER not set"))?;
+        if issuer.is_empty() {
+            return Err(anyhow::anyhow!("OIDC_ISSUER cannot be empty"));
+        }
 
-        let issuer = env::var(format!("{}_ISSUER", prefix))
-            .map_err(|_| anyhow::anyhow!("{}_ISSUER not set", prefix))?;
-        let client_id = env::var(format!("{}_CLIENT_ID", prefix))
-            .map_err(|_| anyhow::anyhow!("{}_CLIENT_ID not set", prefix))?;
-        let client_secret = env::var(format!("{}_CLIENT_SECRET", prefix))
-            .map_err(|_| anyhow::anyhow!("{}_CLIENT_SECRET not set", prefix))?;
-        let redirect_url = env::var(format!("{}_REDIRECT_URL", prefix))
-            .map_err(|_| anyhow::anyhow!("{}_REDIRECT_URL not set", prefix))?;
+        let client_id =
+            env::var("OIDC_CLIENT_ID").map_err(|_| anyhow::anyhow!("OIDC_CLIENT_ID not set"))?;
+        if client_id.is_empty() {
+            return Err(anyhow::anyhow!("OIDC_CLIENT_ID cannot be empty"));
+        }
+
+        let client_secret = env::var("OIDC_CLIENT_SECRET")
+            .map_err(|_| anyhow::anyhow!("OIDC_CLIENT_SECRET not set"))?;
+        if client_secret.is_empty() {
+            return Err(anyhow::anyhow!("OIDC_CLIENT_SECRET cannot be empty"));
+        }
+
+        let redirect_url = env::var("OIDC_REDIRECT_URL")
+            .map_err(|_| anyhow::anyhow!("OIDC_REDIRECT_URL not set"))?;
+        if redirect_url.is_empty() {
+            return Err(anyhow::anyhow!("OIDC_REDIRECT_URL cannot be empty"));
+        }
 
         let issuer_url = IssuerUrl::new(issuer.clone())?;
 
         let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, http_client)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to discover OIDC provider {}: {}", name, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to discover OIDC provider: {}", e))?;
 
         Ok(Self {
-            name: name.to_string(),
             issuer_url: issuer,
             client_id,
             client_secret,
@@ -92,7 +102,7 @@ impl OidcConfig {
 }
 
 pub struct OidcProvider {
-    configs: DashMap<String, OidcConfig>,
+    config: OidcConfig,
     http_client: reqwest::Client,
     storage: Arc<Storage>,
     domain: Arc<String>,
@@ -102,29 +112,14 @@ pub struct OidcProvider {
 
 impl OidcProvider {
     pub async fn new_from_env(domain: Arc<String>, storage: Arc<Storage>) -> anyhow::Result<Self> {
-        let providers_str =
-            env::var("OIDC_PROVIDERS").map_err(|_| anyhow::anyhow!("OIDC_PROVIDERS not set"))?;
-
         let jwt_helper = JwtHelper::new_from_env()?;
-        let configs = DashMap::new();
         let http_client = reqwest::Client::new();
 
-        for name in providers_str.split(',').map(|s| s.trim()) {
-            if name.is_empty() {
-                continue;
-            }
-
-            let config = OidcConfig::from_env(name, &http_client).await?;
-            info!("Configured OIDC provider: {}", name);
-            configs.insert(name.to_string(), config);
-        }
-
-        if configs.is_empty() {
-            return Err(anyhow::anyhow!("No OIDC providers configured"));
-        }
+        let config = OidcConfig::from_env(&http_client).await?;
+        info!("Configured OIDC provider: {}", config.issuer_url);
 
         Ok(Self {
-            configs,
+            config,
             http_client,
             storage,
             domain,
@@ -133,18 +128,8 @@ impl OidcProvider {
         })
     }
 
-    pub fn get_config(&self, name: &str) -> Option<OidcConfig> {
-        self.configs.get(name).map(|c| c.clone())
-    }
-
-    pub fn provider_names(&self) -> Vec<String> {
-        self.configs.iter().map(|e| e.key().clone()).collect()
-    }
-
-    pub fn start_auth(&self, provider_name: &str) -> Result<(String, CsrfToken, Nonce), AppError> {
-        let config = self.configs.get(provider_name).ok_or_else(|| {
-            AppError::NotFound(format!("Unknown OIDC provider: {}", provider_name))
-        })?;
+    pub fn start_auth(&self) -> Result<(String, CsrfToken, Nonce), AppError> {
+        let config = &self.config;
 
         let client =
             CoreClient::from_provider_metadata(
@@ -205,16 +190,13 @@ impl OidcProvider {
 
     pub async fn exchange_code(
         &self,
-        provider_name: &str,
         code: &str,
         csrf_token: &str,
     ) -> Result<(String, String), AppError> {
         // Verify CSRF token and retrieve stored nonce
         let expected_nonce = self.verify_csrf_token(csrf_token)?;
 
-        let config = self.configs.get(provider_name).ok_or_else(|| {
-            AppError::NotFound(format!("Unknown OIDC provider: {}", provider_name))
-        })?;
+        let config = &self.config;
 
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_secret.clone());
@@ -282,14 +264,10 @@ impl OidcProvider {
 
     pub async fn get_or_create_user(
         &self,
-        provider_name: &str,
         email: &str,
         oidc_sub: &str,
     ) -> Result<(String, String), AppError> {
-        let config = self.get_config(provider_name).ok_or_else(|| {
-            AppError::NotFound(format!("Unknown OIDC provider: {}", provider_name))
-        })?;
-
+        let config = &self.config;
         let issuer = &config.issuer_url;
 
         if let Some(user) = self
@@ -326,12 +304,7 @@ impl OidcProvider {
         Ok((uid, final_username))
     }
 
-    pub fn create_verification_token(
-        &self,
-        provider_name: &str,
-        email: &str,
-        uid: &str,
-    ) -> Result<String, AppError> {
+    pub fn create_verification_token(&self, email: &str, uid: &str) -> Result<String, AppError> {
         use jsonwebtoken::{EncodingKey, Header, encode};
 
         #[derive(Serialize)]
@@ -345,7 +318,7 @@ impl OidcProvider {
 
         let now = time::OffsetDateTime::now_utc();
         let claims = VerificationClaims {
-            provider: provider_name.to_string(),
+            provider: "oidc".to_string(),
             email: email.to_string(),
             uid: uid.to_string(),
             exp: (now + time::Duration::minutes(10)).unix_timestamp() as usize,
@@ -561,35 +534,15 @@ pub struct OidcCompleteRequest {
     pub signed_pre_key: SignedPreKey,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OidcProvidersResponse {
-    pub providers: Vec<String>,
-}
-
-pub async fn oidc_providers_handler(
-    State(state): State<AppState>,
-) -> Result<Json<OidcProvidersResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
-
-    Ok(Json(OidcProvidersResponse {
-        providers: oidc.provider_names(),
-    }))
-}
-
 pub async fn oidc_login_handler(
     State(state): State<AppState>,
-    axum::extract::Path(provider): axum::extract::Path<String>,
 ) -> Result<Json<OidcLoginResponse>, AppError> {
     let oidc = state
         .oidc_provider
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
 
-    let (login_url, csrf_token, _nonce) = oidc.start_auth(&provider)?;
+    let (login_url, csrf_token, _nonce) = oidc.start_auth()?;
 
     Ok(Json(OidcLoginResponse {
         login_url,
@@ -599,7 +552,6 @@ pub async fn oidc_login_handler(
 
 pub async fn oidc_callback_handler(
     State(state): State<AppState>,
-    axum::extract::Path(provider): axum::extract::Path<String>,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Json<OidcCallbackResponse>, AppError> {
     let oidc = state
@@ -615,13 +567,11 @@ pub async fn oidc_callback_handler(
     }
 
     // Exchange code and verify CSRF token + nonce + ID token signature
-    let (email, sub) = oidc
-        .exchange_code(&provider, &query.code, &query.state)
-        .await?;
+    let (email, sub) = oidc.exchange_code(&query.code, &query.state).await?;
 
-    let (uid, _username) = oidc.get_or_create_user(&provider, &email, &sub).await?;
+    let (uid, _username) = oidc.get_or_create_user(&email, &sub).await?;
 
-    let verification_token = oidc.create_verification_token(&provider, &email, &uid)?;
+    let verification_token = oidc.create_verification_token(&email, &uid)?;
 
     Ok(Json(OidcCallbackResponse {
         verification_token,
