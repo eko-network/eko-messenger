@@ -23,6 +23,6 @@ jobs:
           name: eko-network
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build nix flake
-        run: nix build .
+        run: nix build .#default .#firebase
       - name: Check nix flake
         run: nix flake check --all-systems

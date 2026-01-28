@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
-use uuid::Uuid;
 use web_push::{SubscriptionInfo, SubscriptionKeys};
 
 use crate::{devices::DeviceId, errors::AppError, storage::traits::NotificationStore};

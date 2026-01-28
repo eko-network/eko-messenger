@@ -20,10 +20,12 @@ pkgs.rustPlatform.buildRustPackage {
     openssl
   ];
 
+  buildNoDefaultFeatures = true;
+
   buildFeatures =
     if authFeature != null
     then [authFeature]
-    else [];
+    else ["auth-oidc"];
 
   SQLX_OFFLINE = "true";
   doCheck = false;
