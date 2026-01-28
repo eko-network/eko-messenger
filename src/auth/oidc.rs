@@ -36,6 +36,7 @@ pub struct OidcConfig {
     pub client_secret: String,
     pub redirect_url: String,
     pub provider_metadata: CoreProviderMetadata,
+    pub additional_audiences: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +86,14 @@ impl OidcConfig {
             return Err(anyhow::anyhow!("OIDC_REDIRECT_URL cannot be empty"));
         }
 
+        let additional_audiences = env::var("OIDC_ADDITIONAL_AUDIENCES")
+            .ok()
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
         let issuer_url = IssuerUrl::new(issuer.clone())?;
 
         let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, http_client)
@@ -97,6 +106,7 @@ impl OidcConfig {
             client_secret,
             redirect_url,
             provider_metadata,
+            additional_audiences,
         })
     }
 }
@@ -229,8 +239,20 @@ impl OidcProvider {
 
         let expected_nonce_obj = Nonce::new(expected_nonce.clone());
 
+        let mut id_token_verifier = client.id_token_verifier();
+
+        if !config.additional_audiences.is_empty() {
+            id_token_verifier = id_token_verifier.set_other_audience_verifier_fn(|aud| {
+                if config.additional_audiences.contains(aud) {
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+
         let id_token_claims = id_token
-            .claims(&client.id_token_verifier(), &expected_nonce_obj)
+            .claims(&id_token_verifier, &expected_nonce_obj)
             .map_err(|e| {
                 error!("ID token verification failed: {:?}", e);
                 AppError::Unauthorized(format!("Invalid ID token: {}", e))
