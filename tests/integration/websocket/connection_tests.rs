@@ -1,5 +1,5 @@
 use crate::common::*;
-use futures_util::{StreamExt};
+use futures_util::StreamExt;
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_tungstenite::{

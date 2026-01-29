@@ -50,10 +50,11 @@ impl TestUser {
     /// Add a device by logging in with new device credentials
     /// Each login creates a new device with keys
     pub async fn add_device(&mut self, app: &TestApp, device_name: &str) -> DeviceId {
-        use crate::common::generate_login_request;
-
-        let login_req =
-            generate_login_request(self.email.clone(), self.password.clone(), Some(device_name));
+        let login_req = app.generate_login_request(
+            self.email.clone(),
+            self.password.clone(),
+            Some(device_name),
+        );
 
         let login_url = format!("{}/auth/v1/login", &app.address);
         let login_res = app
