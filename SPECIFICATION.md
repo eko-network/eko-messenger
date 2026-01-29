@@ -225,7 +225,6 @@ All Signal encrypted messages are transported inside a `SignalEnvelope`.
 
 * Targets *one* user. The to field is the user to route to, it may not be the same as the to field inside the envelope. An example of this is multi-device sync. If a user Bob has two devices, when he messages Alice he may wishto copy the message and send it to himself to maintain synchronization between devices. 
 * Contains one encrypted Message per destination Device  
-  * Encrypted messages are of `“messageType”: “message/signal”`.  
   * Message content is stored as a base64 datatype. When unencrypted, the content uses ActivityPub defined types.  
 * Is delivered as a single ActivityPub Create activity.
 * `notify` is an optional field set by the client to hint wether or not the server should notify the recipient.
