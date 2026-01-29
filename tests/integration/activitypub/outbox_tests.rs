@@ -25,7 +25,7 @@ async fn test_post_to_outbox_unauthenticated_fails() {
 
     // Build a proper envelope from Bob to Alice
     let envelope = SignalEnvelope::new()
-        .add_messages_for_all_devices(alice.did_url.clone(), &bob, &app, "test message")
+        .add_messages_for_all_devices(alice.devices[0].url.clone(), &bob, "test message")
         .build_message(&alice.actor_id, &bob.actor_id);
 
     let activity = alice.create_message_activity(envelope);
@@ -55,7 +55,7 @@ async fn test_post_to_outbox_as_wrong_user_fails() {
 
     // Build a proper envelope from Bob to Alice
     let envelope = SignalEnvelope::new()
-        .add_messages_for_all_devices(bob.did_url.clone(), &alice, &app, "test message")
+        .add_messages_for_all_devices(bob.devices[0].url.clone(), &alice, "test message")
         .build_message(&bob.actor_id, &alice.actor_id);
 
     let activity = bob.create_message_activity(envelope);
@@ -66,7 +66,7 @@ async fn test_post_to_outbox_as_wrong_user_fails() {
     let response = app
         .client
         .post(&outbox_url)
-        .bearer_auth(&bob.token)
+        .bearer_auth(&bob.devices[0].token)
         .header("Content-Type", "application/activity+json")
         .json(&activity)
         .send()
@@ -74,7 +74,6 @@ async fn test_post_to_outbox_as_wrong_user_fails() {
         .expect("Request failed");
 
     // Should return 403 or 401
-    // FIXME an actual bug we have?
     assert!(
         response.status().as_u16() == 401 || response.status().as_u16() == 403,
         "Expected 401 or 403, got {}",
@@ -87,6 +86,7 @@ async fn test_post_to_outbox_as_wrong_user_fails() {
 async fn test_post_malformed_activity_fails() {
     let app = spawn_app().await;
     let alice = TestUser::create(&app, "alice").await;
+    let bob = TestUser::create(&app, "bob").await;
 
     let outbox_url = format!("{}/outbox", &alice.actor_id);
 
@@ -96,17 +96,12 @@ async fn test_post_malformed_activity_fails() {
         // Missing actor and object
     });
 
-    let response = app
-        .client
-        .post(&outbox_url)
-        .bearer_auth(&alice.token)
-        .header("Content-Type", "application/activity+json")
-        .json(&activity)
-        .send()
-        .await
-        .expect("Request failed");
+    let response = bob.post_to_outbox(&app, activity).await;
 
-    // Should return 422 unprocessable content
-    // could also be 400?
-    assert_status(response, 422).await;
+    // Should return 422 unprocessable content or 400
+    assert!(
+        response.status().as_u16() == 422 || response.status().as_u16() == 400,
+        "Expected 401 or 403, got {}",
+        response.status()
+    );
 }

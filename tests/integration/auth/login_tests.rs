@@ -8,8 +8,8 @@ async fn test_basic_login() {
     // Create user via login
     let alice = TestUser::create(&app, "alice").await;
 
-    // Verify token is not empty
-    assert!(!alice.token.is_empty(), "Access token should not be empty");
+    // Verify token is not empty (first device has the token)
+    assert!(!alice.devices[0].token.is_empty(), "Access token should not be empty");
     assert!(!alice.uid.is_empty(), "UID should not be empty");
 }
 

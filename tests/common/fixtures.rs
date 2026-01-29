@@ -3,16 +3,31 @@ use eko_messenger::activitypub::{Activity, Create, EncryptedMessage, EncryptedMe
 use eko_messenger::devices::DeviceId;
 use serde_json::{Value, json};
 
+pub struct TestDevice {
+    pub id: DeviceId,
+    pub url: String,
+    pub token: String,
+    pub name: String,
+}
+
+impl TestDevice {
+    pub fn new(id: DeviceId, url: String, token: String, name: String) -> Self {
+        Self {
+            id,
+            url,
+            token,
+            name,
+        }
+    }
+}
+
 pub struct TestUser {
     pub username: String,
     pub email: String,
     pub password: String,
     pub uid: String,
     pub actor_id: String,
-    pub token: String,
-    pub did_url: String, // TODO for now these will act as the default device inside the tests
-    pub did: DeviceId,   // see other TODO that i need to fix
-    pub devices: Vec<DeviceId>,
+    pub devices: Vec<TestDevice>,
 }
 
 impl TestUser {
@@ -29,16 +44,20 @@ impl TestUser {
         let did = DeviceId::from_url(&login_response.did)
             .expect("Failed to parse device ID from login response");
 
+        let first_device = TestDevice::new(
+            did,
+            login_response.did.clone(),
+            login_response.access_token.clone(),
+            "default".to_string(),
+        );
+
         Self {
             username: username.to_string(),
             email,
             password: password.to_string(),
             uid: login_response.uid.clone(),
             actor_id: app.actor_url(&login_response.uid),
-            token: login_response.access_token,
-            did_url: login_response.did,
-            did,
-            devices: vec![did],
+            devices: vec![first_device],
         }
     }
 
@@ -49,7 +68,7 @@ impl TestUser {
 
     /// Add a device by logging in with new device credentials
     /// Each login creates a new device with keys
-    pub async fn add_device(&mut self, app: &TestApp, device_name: &str) -> DeviceId {
+    pub async fn add_device(&mut self, app: &TestApp, device_name: &str) -> &TestDevice {
         let login_req = app.generate_login_request(
             self.email.clone(),
             self.password.clone(),
@@ -76,9 +95,15 @@ impl TestUser {
         let new_did = DeviceId::from_url(&login_response.did)
             .expect("Failed to parse device ID from login response");
 
-        self.devices.push(new_did);
+        let new_device = TestDevice::new(
+            new_did,
+            login_response.did.clone(),
+            login_response.access_token.clone(),
+            device_name.to_string(),
+        );
 
-        new_did
+        self.devices.push(new_device);
+        self.devices.last().unwrap()
     }
 
     /// Send a message to another user from this user's first device
@@ -105,11 +130,6 @@ impl TestUser {
         recipient: &TestUser,
         content: &str,
     ) -> reqwest::Response {
-        // TODO im not entirely in love with this way to send from specific devices?
-        // maybe if you want to mess around with devices, you create a device and in the
-        // test you pass the name or id of the device. or the device object.
-        // i think i need to handle devices and keys and stuff better. ill do that when i
-        // actually properly handle sending and "encrypting" messages with the keys
         let sender_device = self.devices.get(device_index).unwrap_or_else(|| {
             panic!(
                 "Device index {} out of bounds for user {} (has {} devices)",
@@ -118,52 +138,58 @@ impl TestUser {
                 self.devices.len()
             )
         });
-        let sender_device_url = sender_device.to_url(&app.domain);
 
         // Build envelope with messages for all recipient devices
-        let mut builder = SignalEnvelope::new().add_messages_for_all_devices(
-            sender_device_url.clone(),
+        let builder = SignalEnvelope::new().add_messages_for_all_devices(
+            sender_device.url.clone(),
             recipient,
-            app,
             content,
         );
 
-        // Add messages for the sender's devices (exclude the sending device)
-        // FIXME shouuldnt we be adding messages from the sender's other devices?
+        // FIXME need to add messages for the sender's devices (exclude the sending device). two payloads or one?
         // for (idx, device) in self.devices.iter().enumerate() {
         //     if idx != device_index {
-        //         let device_url = device.to_url(&app.domain);
         //         builder =
-        //             builder.add_device_message(sender_device_url.clone(), device_url, content);
+        //             builder.add_device_message(sender_device.url.clone(), device.url.clone(), content);
         //     }
         // }
 
         let envelope = builder.build_message(&self.actor_id, &recipient.actor_id);
         let activity = self.create_message_activity(envelope);
-        self.post_to_outbox(app, activity).await
+        self.post_to_outbox_with_device(app, activity, device_index)
+            .await
     }
 
-    /// Send a manually constructed envelope to another user
+    /// Send a manually constructed envelope to another user from the first device
     pub async fn send_envelope(
         &self,
         app: &TestApp,
         envelope: EncryptedMessage,
     ) -> reqwest::Response {
         let activity = self.create_message_activity(envelope);
-        self.post_to_outbox(app, activity).await
+        self.post_to_outbox_with_device(app, activity, 0).await
     }
 
-    /// Post an activity to this user's outbox
-    pub async fn post_to_outbox<T: serde::Serialize>(
+    /// Post an activity to this user's outbox using a specific device's token
+    pub async fn post_to_outbox_with_device<T: serde::Serialize>(
         &self,
         app: &TestApp,
         activity: T,
+        device_index: usize,
     ) -> reqwest::Response {
+        let device = self.devices.get(device_index).unwrap_or_else(|| {
+            panic!(
+                "Device index {} out of bounds for user {} (has {} devices)",
+                device_index,
+                self.username,
+                self.devices.len()
+            )
+        });
         let outbox_url = format!("{}/outbox", &self.actor_id);
 
         app.client
             .post(&outbox_url)
-            .bearer_auth(&self.token)
+            .bearer_auth(&device.token)
             .header("Content-Type", "application/activity+json")
             .json(&activity)
             .send()
@@ -171,22 +197,42 @@ impl TestUser {
             .expect("Failed to post to outbox")
     }
 
-    /// Get this user's inbox
-    /// TODO i need to implement a get_inbox for individual devices...
-    /// FIXME actually i just realized the token needs to be by device, not per user. oml im going crazy.
-    pub async fn get_inbox(&self, app: &TestApp) -> Value {
+    /// Post an activity to this user's outbox using the first device's token
+    pub async fn post_to_outbox<T: serde::Serialize>(
+        &self,
+        app: &TestApp,
+        activity: T,
+    ) -> reqwest::Response {
+        self.post_to_outbox_with_device(app, activity, 0).await
+    }
+
+    /// Get this user's inbox using a specific device's token
+    pub async fn get_inbox_with_device(&self, app: &TestApp, device_index: usize) -> Value {
+        let device = self.devices.get(device_index).unwrap_or_else(|| {
+            panic!(
+                "Device index {} out of bounds for user {} (has {} devices)",
+                device_index,
+                self.username,
+                self.devices.len()
+            )
+        });
         let inbox_url = format!("{}/inbox", &self.actor_id);
 
         let resp = app
             .client
             .get(&inbox_url)
-            .bearer_auth(&self.token)
+            .bearer_auth(&device.token)
             .header("Accept", "application/activity+json")
             .send()
             .await
             .expect("Failed to get inbox");
 
         resp.json().await.expect("Failed to parse inbox")
+    }
+
+    /// Get this user's inbox using the first device's token
+    pub async fn get_inbox(&self, app: &TestApp) -> Value {
+        self.get_inbox_with_device(app, 0).await
     }
 
     /// Get this user's actor profile
@@ -224,8 +270,6 @@ impl SignalEnvelope {
     }
 
     /// Add an encrypted message for a specific device
-    /// `from_did`: The device ID of the sender
-    /// `to_did`: The device ID of the recipient  
     pub fn add_device_message(
         mut self,
         from_did_url: String,
@@ -245,13 +289,11 @@ impl SignalEnvelope {
         mut self,
         from_did_url: String,
         recipient: &TestUser,
-        app: &TestApp,
         content: &str,
     ) -> Self {
         for device in &recipient.devices {
-            let to_did_url = device.to_url(&app.domain);
             self.messages.push(EncryptedMessageEntry {
-                to: to_did_url,
+                to: device.url.clone(),
                 from: from_did_url.clone(),
                 content: content.as_bytes().to_vec(),
             });

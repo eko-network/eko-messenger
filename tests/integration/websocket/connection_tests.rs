@@ -36,7 +36,7 @@ async fn test_websocket_with_authentication() {
     let mut request = ws_url.into_client_request().unwrap();
     request.headers_mut().insert(
         "Authorization",
-        HeaderValue::from_str(&format!("Bearer {}", alice.token)).unwrap(),
+        HeaderValue::from_str(&format!("Bearer {}", alice.devices[0].token)).unwrap(),
     );
 
     // Connection should succeed
@@ -70,7 +70,7 @@ async fn test_websocket_stays_connected() {
     let mut request = ws_url.into_client_request().unwrap();
     request.headers_mut().insert(
         "Authorization",
-        HeaderValue::from_str(&format!("Bearer {}", alice.token)).unwrap(),
+        HeaderValue::from_str(&format!("Bearer {}", alice.devices[0].token)).unwrap(),
     );
 
     let (mut ws_stream, _) = connect_async(request).await.unwrap();
@@ -101,7 +101,7 @@ async fn test_receive_message_via_websocket() {
     let mut request = ws_url.into_client_request().unwrap();
     request.headers_mut().insert(
         "Authorization",
-        HeaderValue::from_str(&format!("Bearer {}", bob.token)).unwrap(),
+        HeaderValue::from_str(&format!("Bearer {}", bob.devices[0].token)).unwrap(),
     );
 
     let (mut ws_stream, _) = connect_async(request).await.unwrap();
