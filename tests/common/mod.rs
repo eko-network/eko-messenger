@@ -6,7 +6,7 @@ pub use assertions::*;
 pub use fixtures::*;
 pub use local_auth::LocalIdentityProvider;
 
-#[cfg(feature = "integration-firebase")]
+#[cfg(feature = "auth-firebase")]
 use ::eko_messenger::auth::FirebaseAuth;
 
 use dashmap::DashMap;
@@ -38,7 +38,7 @@ pub enum StorageBackend {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityBackend {
     Test,
-    #[cfg(feature = "integration-firebase")]
+    #[cfg(feature = "auth-firebase")]
     Firebase,
 }
 
@@ -68,7 +68,7 @@ pub async fn spawn_app_with_storage(storage: StorageBackend) -> TestApp {
     .await
 }
 
-#[cfg(feature = "integration-firebase")]
+#[cfg(feature = "auth-firebase")]
 // NOTE this function is never called. If we want to use the entire test bench with firebase auth
 // then we would have to do some restructure.
 pub async fn spawn_app_firebase() -> TestApp {
@@ -111,7 +111,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
             LocalIdentityProvider::new(domain.clone(), storage.clone()),
             storage.clone(),
         ),
-        #[cfg(feature = "integration-firebase")]
+        #[cfg(feature = "auth-firebase")]
         IdentityBackend::Firebase => {
             let client = reqwest::Client::new();
             let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone())

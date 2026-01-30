@@ -7,7 +7,6 @@ edition = "2024"
 default = ["auth-oidc"]
 auth-firebase = ["dep:gcp_auth"]
 auth-oidc = ["dep:openidconnect"]
-integration-firebase = ["auth-firebase"]
 
 [dependencies]
 anyhow = "1.0.100"

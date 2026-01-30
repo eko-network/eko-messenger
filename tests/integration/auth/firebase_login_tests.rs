@@ -1,4 +1,4 @@
-#![cfg(feature = "integration-firebase")]
+#![cfg(feature = "auth-firebase")]
 
 use crate::common::*;
 

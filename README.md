@@ -39,5 +39,5 @@ cargo test
 
 Run Firebase integration tests (requires `FIREBASE_API_KEY` and test user credentials):
 ```
-cargo test --no-default-features --features integration-firebase
+cargo test --no-default-features --features auth-firebase
 ```
