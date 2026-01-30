@@ -224,7 +224,7 @@ Example: User with keyPackages collection
 All Signal encrypted messages are transported inside a `SignalEnvelope`.
 
 * Targets *one* user.
-* `to` is the User to route to. It may not be the same as the `to` field inside the `SignalEnvelope`. An example of this is multi-device sync. If a user Bob has two devices, when he messages Alice he may wish to copy the message and send it to himself to maintain synchronization between devices.
+* `to` is the User to route to. Note: It may be different than the `to` field inside the `SignalEnvelope`. An example of this is multi-device sync. If a user Bob has two devices, when he messages Alice he may wish to copy the message and send it to himself to maintain synchronization between devices.
 * Contains one encrypted Message per destination Device
   * Message content is stored as a base64 datatype. When unencrypted, the content uses ActivityPub defined types.  
 * Is delivered as a single ActivityPub Create activity.
