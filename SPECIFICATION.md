@@ -223,11 +223,13 @@ Example: User with keyPackages collection
 
 All Signal encrypted messages are transported inside a `SignalEnvelope`.
 
-* Targets *one* user.  
-* Contains one encrypted Message per destination Device  
-  * Encrypted messages are of `“messageType”: “message/signal”`.  
+* Targets *one* user.
+* `to` is the User to route to. Note: It may be different than the `to` field inside the `SignalEnvelope`. An example of this is multi-device sync. If a user Bob has two devices, when he messages Alice he may wish to copy the message and send it to himself to maintain synchronization between devices.
+* Contains one encrypted Message per destination Device
   * Message content is stored as a base64 datatype. When unencrypted, the content uses ActivityPub defined types.  
 * Is delivered as a single ActivityPub Create activity.
+* `notify` is an optional field set by the client to hint weather or not the server should notify the recipient.
+* `expires` is an optional field. If the server is unable to deliver the message before it expires, it should give up and discard the message. This is useful for transient activities such as a typing indicator.
 
 Example: User sending a `SignalEnvelope`  
 ```json  
@@ -235,16 +237,12 @@ Example: User sending a `SignalEnvelope`
   "@context": "https://www.w3.org/ns/activitystreams",
   "type": "Create",
   "actor": "https://eko.network/user/user1",
-  "to": [
-    "https://other.network/user/user2"
-  ],
+  "to": "https://other.network/user/user2",
   "object": {
-    "type": [
-      "Object",
-      "SignalEnvelope"
-    ],
-    "mediaType": "message/signal",
-    "encoding": "base64",
+    "type": "SignalEnvelope",
+    "published": "2026-01-29T19:30:00Z",
+    "notify": true,
+    "expires": "2026-01-29T19:33:00Z"
     "messages": [
       {
         "deviceId": "device-A",
