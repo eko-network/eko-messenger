@@ -1,10 +1,18 @@
-use async_trait::async_trait;
+mod assertions;
+mod fixtures;
+mod local_auth;
+
+pub use assertions::*;
+pub use fixtures::*;
+pub use local_auth::LocalIdentityProvider;
+
+#[cfg(feature = "integration-firebase")]
+use ::eko_messenger::auth::FirebaseAuth;
+
 use dashmap::DashMap;
-#[cfg(feature = "auth-firebase")]
-use eko_messenger::auth::FirebaseAuth;
 use eko_messenger::{
     AppState, app,
-    auth::{Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, SignedPreKey},
+    auth::{Auth, LoginRequest, LoginResponse, PreKey, SignedPreKey},
     notifications::NotificationService,
     storage::{Storage, postgres::connection::postgres_storage},
 };
@@ -30,7 +38,7 @@ pub enum StorageBackend {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityBackend {
     Test,
-    #[cfg(feature = "auth-firebase")]
+    #[cfg(feature = "integration-firebase")]
     Firebase,
 }
 
@@ -42,98 +50,9 @@ pub struct SpawnOptions {
 impl Default for SpawnOptions {
     fn default() -> Self {
         Self {
-            storage: selected_storage_backend(),
+            storage: StorageBackend::Postgres,
             identity: IdentityBackend::Test,
         }
-    }
-}
-
-fn selected_storage_backend() -> StorageBackend {
-    let backend = env::var("TEST_STORAGE_BACKEND")
-        .or_else(|_| env::var("STORAGE_BACKEND"))
-        .unwrap_or_else(|_| "postgres".to_string());
-
-    match backend.to_lowercase().as_str() {
-        "postgres" => StorageBackend::Postgres,
-        other => panic!("Invalid storage backend '{other}'."),
-    }
-}
-
-#[derive(Clone)]
-pub struct TestIdentityProvider {
-    domain: Arc<String>,
-}
-
-impl TestIdentityProvider {
-    pub fn new(domain: Arc<String>) -> Self {
-        Self { domain }
-    }
-}
-
-fn uid_from_email(email: &str) -> String {
-    let uid: String = email
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect();
-    if uid.is_empty() {
-        "testuser".to_string()
-    } else {
-        uid
-    }
-}
-
-#[async_trait]
-impl IdentityProvider for TestIdentityProvider {
-    async fn login_with_email(
-        &self,
-        email: String,
-        _password: String,
-    ) -> Result<(eko_messenger::activitypub::Person, String), eko_messenger::errors::AppError> {
-        let uid = uid_from_email(&email);
-        let person = self.person_from_uid(&uid).await?;
-        Ok((person, uid))
-    }
-
-    async fn person_from_uid(
-        &self,
-        uid: &str,
-    ) -> Result<eko_messenger::activitypub::Person, eko_messenger::errors::AppError> {
-        use eko_messenger::activitypub::create_person;
-        Ok(create_person(
-            &self.domain,
-            uid,
-            Some("Test user".to_string()),
-            uid.to_string(),
-            Some("Test User".to_string()),
-            None,
-        ))
-    }
-
-    async fn uid_from_username(
-        &self,
-        username: &str,
-    ) -> Result<String, eko_messenger::errors::AppError> {
-        // In test mode, username is the uid
-        Ok(username.to_string())
-    }
-}
-
-pub fn generate_login_request(email: String, password: String) -> LoginRequest {
-    LoginRequest {
-        email,
-        password,
-        device_name: "test_device".to_string(),
-        identity_key: vec![1, 2, 3],
-        registration_id: 123,
-        pre_keys: vec![PreKey {
-            id: 1,
-            key: vec![4, 5, 6],
-        }],
-        signed_pre_key: SignedPreKey {
-            id: 1,
-            key: vec![7, 8, 9],
-            signature: vec![10, 11, 12],
-        },
     }
 }
 
@@ -144,6 +63,17 @@ pub async fn spawn_app() -> TestApp {
 pub async fn spawn_app_with_storage(storage: StorageBackend) -> TestApp {
     spawn_app_with_options(SpawnOptions {
         storage,
+        ..Default::default()
+    })
+    .await
+}
+
+#[cfg(feature = "integration-firebase")]
+// NOTE this function is never called. If we want to use the entire test bench with firebase auth
+// then we would have to do some restructure.
+pub async fn spawn_app_firebase() -> TestApp {
+    spawn_app_with_options(SpawnOptions {
+        identity: IdentityBackend::Firebase,
         ..Default::default()
     })
     .await
@@ -168,24 +98,22 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
     let address = format!("http://127.0.0.1:{}", port);
     let domain = Arc::new(format!("http://127.0.0.1:{}", port));
 
-    // Initialize server address for tests
-    // Note: This will fail if called multiple times, but that's ok for tests
+    // Initialize server address
     let storage = match options.storage {
         StorageBackend::Postgres => {
             Arc::new(postgres_storage(domain.clone(), postgres_pool().await))
         }
     };
 
-    let client = reqwest::Client::new();
-
     let auth_service = match options.identity {
         IdentityBackend::Test => Auth::new(
             domain.clone(),
-            TestIdentityProvider::new(domain.clone()),
+            LocalIdentityProvider::new(domain.clone(), storage.clone()),
             storage.clone(),
         ),
-        #[cfg(feature = "auth-firebase")]
+        #[cfg(feature = "integration-firebase")]
         IdentityBackend::Firebase => {
+            let client = reqwest::Client::new();
             let firebase_auth = FirebaseAuth::new_from_env(domain.clone(), client.clone())
                 .await
                 .expect("Failed to create FirebaseAuth from env");
@@ -221,7 +149,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
     TestApp {
         address,
         domain: domain,
-        storage,
+        storage: storage,
         client: Client::new(),
     }
 }
@@ -231,8 +159,58 @@ impl TestApp {
         format!("{}/users/{}", self.domain, uid)
     }
 
+    pub fn generate_login_request(
+        &self,
+        email: String,
+        password: String,
+        device_name: Option<&str>,
+    ) -> LoginRequest {
+        let device_name = device_name.unwrap_or("test_device");
+
+        // FIXME keys and things need to be fixed
+        LoginRequest {
+            email,
+            password,
+            device_name: device_name.to_string(),
+            identity_key: vec![1, 2, 3],
+            registration_id: 123,
+            pre_keys: vec![PreKey {
+                id: 1,
+                key: vec![4, 5, 6],
+            }],
+            signed_pre_key: SignedPreKey {
+                id: 1,
+                key: vec![7, 8, 9],
+                signature: vec![10, 11, 12],
+            },
+        }
+    }
+
+    pub async fn signup_http(&self, username: &str, email: &str, password: &str) {
+        use serde_json::json;
+
+        let signup_url = format!("{}/auth/v1/signup", &self.address);
+        let signup_body = json!({
+            "username": username,
+            "email": email,
+            "password": password,
+        });
+
+        let signup_res = self
+            .client
+            .post(&signup_url)
+            .header("User-Agent", "test-client")
+            .json(&signup_body)
+            .send()
+            .await
+            .expect("HTTP Signup failed");
+
+        let status = signup_res.status();
+        assert!(status.is_success(), "Signup failed with status {}", status);
+    }
+
     pub async fn login_http(&self, email: &str, password: &str) -> LoginResponse {
-        let login_req = generate_login_request(email.to_string(), password.to_string());
+        let login_req = self.generate_login_request(email.to_string(), password.to_string(), None);
         let login_url = format!("{}/auth/v1/login", &self.address);
 
         let login_res = self
@@ -255,15 +233,6 @@ impl TestApp {
 
         serde_json::from_str::<LoginResponse>(&body).expect("Failed to parse login response")
     }
-}
-
-#[cfg(feature = "integration-firebase")]
-pub async fn spawn_app_firebase() -> TestApp {
-    spawn_app_with_options(SpawnOptions {
-        identity: IdentityBackend::Firebase,
-        ..Default::default()
-    })
-    .await
 }
 
 async fn postgres_pool() -> PgPool {
