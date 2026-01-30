@@ -21,7 +21,11 @@ async fn test_device_count_mismatch_rejected() {
     // Build a message that only targets ONE of Alice's devices (should target both)
     let alice_device1_url = alice.devices[0].url.clone();
     let envelope = SignalEnvelope::new()
-        .add_device_message(bob.devices[0].url.clone(), alice_device1_url, "incomplete message")
+        .add_device_message(
+            bob.devices[0].url.clone(),
+            alice_device1_url,
+            "incomplete message",
+        )
         .build_message(&bob.actor_id, &alice.actor_id);
 
     let response = bob.send_envelope(&app, envelope).await;
@@ -52,6 +56,17 @@ async fn test_correct_device_count_accepted() {
 
     // Should be accepted
     assert_success(response).await;
+
+    // All of Alice's devices should receive the message with correct sender and content
+    assert_all_devices_received_message(
+        &app,
+        &alice,
+        1,
+        Some(&bob.actor_id),
+        Some(b"hello alice"),
+        None,
+    )
+    .await;
 }
 
 /// Test sending from a specific device

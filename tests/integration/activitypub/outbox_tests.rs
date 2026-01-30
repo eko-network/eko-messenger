@@ -86,9 +86,6 @@ async fn test_post_to_outbox_as_wrong_user_fails() {
 async fn test_post_malformed_activity_fails() {
     let app = spawn_app().await;
     let alice = TestUser::create(&app, "alice").await;
-    let bob = TestUser::create(&app, "bob").await;
-
-    let outbox_url = format!("{}/outbox", &alice.actor_id);
 
     // Missing required fields
     let activity = json!({
@@ -96,7 +93,7 @@ async fn test_post_malformed_activity_fails() {
         // Missing actor and object
     });
 
-    let response = bob.post_to_outbox(&app, activity).await;
+    let response = alice.post_to_outbox(&app, activity).await;
 
     // Should return 422 unprocessable content or 400
     assert!(

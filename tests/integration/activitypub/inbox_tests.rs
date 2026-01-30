@@ -54,7 +54,6 @@ async fn test_inbox_multiple_messages() {
     }
 
     let inbox = bob.get_inbox(&app).await;
-    dbg!(&inbox);
     assert_collection_size(&inbox, 3);
     assert_eq!(inbox["totalItems"], 3);
 

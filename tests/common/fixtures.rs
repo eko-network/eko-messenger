@@ -120,7 +120,7 @@ impl TestUser {
     }
 
     /// Send a message from a specific device to another user
-    /// Creates encrypted messages for the recipient's devices (FIXME and sender's?)
+    /// Creates encrypted messages for the recipient's devices
     ///
     /// `device_index` is the index into this user's devices array
     pub async fn send_message_from_device(
@@ -139,24 +139,58 @@ impl TestUser {
             )
         });
 
-        // Build envelope with messages for all recipient devices
-        let builder = SignalEnvelope::new().add_messages_for_all_devices(
-            sender_device.url.clone(),
-            recipient,
-            content,
-        );
+        // Check if sending to self or to another user
+        if self.actor_id != recipient.actor_id {
+            // Send to sender's other devices and recipient's devices
+            if self.device_count() > 1 {
+                self.send_to_own_devices(app, device_index, &sender_device.url, content)
+                    .await;
+            }
 
-        // FIXME need to add messages for the sender's devices (exclude the sending device). two payloads or one?
-        // for (idx, device) in self.devices.iter().enumerate() {
-        //     if idx != device_index {
-        //         builder =
-        //             builder.add_device_message(sender_device.url.clone(), device.url.clone(), content);
-        //     }
-        // }
+            // Send to recipient's devices
+            let envelope = SignalEnvelope::new()
+                .add_messages_for_all_devices(sender_device.url.clone(), recipient, content)
+                .build_message(&self.actor_id, &recipient.actor_id);
 
-        let envelope = builder.build_message(&self.actor_id, &recipient.actor_id);
+            let activity = self.create_message_activity(envelope);
+            self.post_to_outbox_with_device(app, activity, device_index)
+                .await
+        } else {
+            // Sending to self: send to own devices (excluding the sending device)
+            self.send_to_own_devices(app, device_index, &sender_device.url, content)
+                .await
+        }
+    }
+
+    /// Send a message to the user's own devices (excluding the sending device)
+    async fn send_to_own_devices(
+        &self,
+        app: &TestApp,
+        exclude_device_index: usize,
+        sender_device_url: &str,
+        content: &str,
+    ) -> reqwest::Response {
+        if self.devices.len() <= 1 {
+            panic!(
+                "User {} must have more than one device to send to own devices",
+                self.username
+            );
+        }
+
+        let mut envelope = SignalEnvelope::new();
+        for (idx, device) in self.devices.iter().enumerate() {
+            if idx != exclude_device_index {
+                envelope = envelope.add_device_message(
+                    sender_device_url.to_string(),
+                    device.url.clone(),
+                    content,
+                );
+            }
+        }
+
+        let envelope = envelope.build_message(&self.actor_id, &self.actor_id);
         let activity = self.create_message_activity(envelope);
-        self.post_to_outbox_with_device(app, activity, device_index)
+        self.post_to_outbox_with_device(app, activity, exclude_device_index)
             .await
     }
 
