@@ -240,30 +240,54 @@ Example: User sending a `SignalEnvelope`
   "to": "https://other.network/user/user2",
   "object": {
     "type": "SignalEnvelope",
+    "id": "https://eko.network/messages/id"
     "published": "2026-01-29T19:30:00Z",
     "notify": true,
     "expires": "2026-01-29T19:33:00Z"
     "messages": [
       {
-        "deviceId": "device-A",
+        "to": "https://other.network/devices/device-A"
+        "from": "https://eko.network/devices/device-C"
         "content": "base64-encoded-ciphertext"
       },
       {
-        "deviceId": "device-B",
+        "to": "https://other.network/devices/device-A"
+        "from": "https://eko.network/devices/device-C"
         "content": "base64-encoded-ciphertext"
       }
     ]
   }
 }
 ```
+#### Delivered
+To support transience, upon receiving a SignalEnvelop, the client MUST respond with a `Delivered` activity. Upon receiving a `Delivered` Activity the server MUST remove that devices message entry from the message and not deliver the message again.
+Example: a `Delivered` Activity
+```json  
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://eko.network/activities/id",
+  "type": "Delivered",
+  "actor": "https://eko.network/user/user1",
+  "to": "https://other.network/user/user2",
+  "object": "https://eko.network/messages/id"
+}
+```
 ## Encrypted Content
 
 All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryption, clients MUST process the content as if it were received directly from an ActivityPub inbox.
+
+### Supported Activities
+
+* Typing # special transient activity?  
+* Read
+* Create
+* Update
+* Delete
+
 ### Supported Objects
 
 * Note  
 * EmojiReact  
-* Typing # special transient activity?  
 * Image  
 * Audio  
 * Video
