@@ -260,7 +260,7 @@ Example: User sending a `SignalEnvelope`
 }
 ```
 #### Delivered
-To support transience, upon receiving a SignalEnvelop, the client MUST respond with a `Delivered` activity. Upon receiving a `Delivered` Activity the server MUST remove that devices message entry from the message and not deviver the message again.
+To support transience, upon receiving a SignalEnvelop, the client MUST respond with a `Delivered` activity. Upon receiving a `Delivered` Activity the server MUST remove that devices message entry from the message and not deliver the message again.
 Example: a `Delivered` Activity
 ```json  
 {
