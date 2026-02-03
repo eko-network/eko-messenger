@@ -2,13 +2,71 @@ use std::collections::HashSet;
 
 use crate::{
     AppState,
-    activitypub::{Create, EncryptedMessage, types::generate_create},
+    activitypub::{Activity, EncryptedMessageEntry, handlers::outbox::KEY_COLLECTION_URL},
     devices::DeviceId,
     errors::AppError,
-    storage::models::StoredInboxEntry,
 };
 use axum::extract::ws::{Message, Utf8Bytes};
-use tracing::{debug, info, warn};
+use futures::future::join_all;
+use serde::Serialize;
+use tracing::{info, warn};
+
+pub trait ActivityData: Serialize {
+    fn id(&self) -> Option<&str>;
+    fn actor(&self) -> &str;
+    fn to(&self) -> &str;
+}
+
+#[derive(Serialize)]
+struct CreateView<'a> {
+    #[serde(rename = "@context")]
+    context: &'a serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<&'a str>,
+    actor: &'a str,
+    object: EncryptedMessageView<'a>,
+    to: &'a str,
+    #[serde(rename = "type")]
+    type_field: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EncryptedMessageView<'a> {
+    #[serde(rename = "@context")]
+    context: &'a serde_json::Value,
+    #[serde(rename = "type")]
+    type_field: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<&'a str>,
+    content: &'a [EncryptedMessageEntry],
+    attributed_to: &'a str,
+    to: &'a [String],
+}
+
+impl ActivityData for Activity {
+    fn id(&self) -> Option<&str> {
+        self.as_base().id().map(|s| s.as_str())
+    }
+    fn actor(&self) -> &str {
+        self.as_base().actor()
+    }
+    fn to(&self) -> &str {
+        self.as_base().to()
+    }
+}
+
+impl<'a> ActivityData for CreateView<'a> {
+    fn id(&self) -> Option<&str> {
+        self.id
+    }
+    fn actor(&self) -> &str {
+        self.actor
+    }
+    fn to(&self) -> &str {
+        self.to
+    }
+}
 
 /// Main service for orchestrating message delivery
 pub struct MessagingService;
@@ -18,58 +76,18 @@ impl MessagingService {
     /// Handles routing to local or remote recipients
     pub async fn process_outgoing_message(
         state: &AppState,
-        activity: &Create,
-        sender_actor: &str,
-        sender_did: &DeviceId,
-    ) -> Result<(), AppError> {
-        // Iterate through all recipients
-        for recipient_actor_id in &activity.object.to {
-            // TODO: Check if recipient is local or remote
-            if state
-                .storage
-                .actors
-                .is_local_actor(recipient_actor_id)
-                .await?
-            {
-                Self::deliver_local(
-                    state,
-                    &activity.object,
-                    sender_actor,
-                    recipient_actor_id,
-                    sender_actor,
-                    sender_did,
-                )
-                .await?;
-            } else {
-                Self::deliver_remote(state, activity, recipient_actor_id).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn validate_message_recipients(
-        to: &str,
-        from: &str,
+        activity: &Activity,
         from_did: &DeviceId,
-        message: &EncryptedMessage,
-        state: &AppState,
     ) -> Result<(), AppError> {
-        let mut recipient_devices = crate::devices::DeviceService::list_device_ids(
-            state,
-            &crate::activitypub::actor_uid(to)?,
-        )
-        .await?;
-        let envelope_device_ids: HashSet<String> =
-            message.content.iter().map(|e| e.to.clone()).collect();
-
-        // if the message is from yourself it shouldn't be addressed to yourself
-        if to == from {
-            recipient_devices.remove(&from_did.to_url(&state.domain));
-        }
-
-        if envelope_device_ids != recipient_devices {
-            return Err(AppError::BadRequest("device_list_mismatch".to_string()));
+        if state
+            .storage
+            .actors
+            .is_local_actor(activity.as_base().to())
+            .await?
+        {
+            Self::deliver_local(state, activity, from_did).await?;
+        } else {
+            Self::deliver_remote(state, activity).await?;
         }
 
         Ok(())
@@ -78,111 +96,172 @@ impl MessagingService {
     /// Deliver message to a local recipient
     async fn deliver_local(
         state: &AppState,
-        message: &EncryptedMessage,
-        sender_actor: &str,
-        recipient_actor_id: &str,
-        sender_actor_id: &str,
-        sender_did: &DeviceId,
+        activity: &Activity,
+        from_did: &DeviceId,
     ) -> Result<(), AppError> {
-        // Validate envelope has correct device count for recipient
-        Self::validate_message_recipients(
-            recipient_actor_id,
-            sender_actor_id,
-            sender_did,
-            message,
+        let is_sync_message = activity.as_base().actor() == activity.as_base().to();
+
+        let mut fanout = crate::devices::DeviceService::list_device_ids(
             state,
+            &crate::activitypub::actor_uid(&activity.as_base().to())?,
         )
         .await?;
 
-        let mut did_to_notif: Vec<_> = Vec::with_capacity(message.content.len());
+        match activity {
+            Activity::Create(create) => {
+                let from_dids: HashSet<&String> =
+                    create.object.content.iter().map(|e| &e.from).collect();
 
-        for entry in &message.content {
-            info!("SEND for {}, {}", recipient_actor_id, entry.to);
+                let to_dids: HashSet<&String> =
+                    create.object.content.iter().map(|e| &e.to).collect();
 
-            let did = DeviceId::from_url(&entry.to)?;
-            // Try to deliver via WebSocket if recipient is online
-            if Self::try_websocket_delivery(state, sender_actor, recipient_actor_id, entry, did)
-                .await?
-            {
-                debug!("Delivered via WebSocket to {}", recipient_actor_id);
-                continue;
+                if from_dids.len() != 1 {
+                    return Err(AppError::BadRequest(
+                        "Message should be sent from a single device".to_string(),
+                    ));
+                }
+
+                let from_did_url = from_did.to_url(&state.domain);
+
+                if from_did_url != *from_dids.into_iter().next().unwrap() {
+                    return Err(AppError::BadRequest(
+                        "Message sender does not match from".to_string(),
+                    ));
+                }
+
+                if is_sync_message {
+                    fanout.remove(&from_did_url);
+                }
+
+                if to_dids.len() != fanout.len() || !!to_dids.iter().all(|&id| fanout.contains(id))
+                {
+                    //TODO Reject activity
+                    return Err(AppError::BadRequest("device_list_mismatch".into()));
+                }
+
+                state.storage.inbox.insert_create(&create).await?;
+
+                join_all(create.object.content.iter().map(|entry| async move {
+                    let activity_view = CreateView {
+                        context: &create.context,
+                        id: create.id.as_deref(),
+                        actor: &create.actor,
+                        object: EncryptedMessageView {
+                            context: &create.object.context,
+                            type_field: &create.object.type_field,
+                            id: create.object.id.as_deref(),
+                            content: std::slice::from_ref(entry),
+                            attributed_to: &create.object.attributed_to,
+                            to: &create.object.to,
+                        },
+                        to: &create.to,
+                        type_field: "Create",
+                    };
+
+                    if let Ok(did) = DeviceId::from_url(&entry.to) {
+                        if !Self::try_websocket_delivery(&state, &activity_view, did).await {
+                            if let Err(e) = state.notification_service.notify(did).await {
+                                warn!("Tried to notify {} Error: {:?}", entry.to, e);
+                            }
+                        }
+                    } else {
+                        warn!("Tried to notify {}, url malformed", entry.to);
+                    }
+                }))
+                .await;
             }
+            Activity::Take(take) => {
+                // this redoes compute from prev function (a little bad)
+                let device_url = take.to.trim_end_matches(KEY_COLLECTION_URL);
+                let target_did = DeviceId::from_url(device_url)?;
+                // try to send over socket, if it fails write to db
+                if !Self::try_websocket_delivery(&state, activity, target_did).await {
+                    state
+                        .storage
+                        .inbox
+                        .insert_non_create(activity, &vec![target_did])
+                        .await?;
+                }
+            }
+            Activity::Delivered(delivered) => {}
+        };
 
-            // Recipient offline or WebSocket failed, store in inbox
-            state
-                .storage
-                .inbox
-                .insert_inbox_entry(
-                    recipient_actor_id,
-                    did,
-                    StoredInboxEntry {
-                        actor_id: sender_actor.to_string(),
-                        from_did: entry.from.clone(),
-                        content: entry.content.clone(),
-                    },
-                )
-                .await?;
+        // let mut did_to_notif: Vec<_> = Vec::with_capacity(message.content.len());
 
-            // Queue for push notification
-            did_to_notif.push(did);
-        }
+        // for entry in &message.content {
+        //     info!("SEND for {}, {}", recipient_actor_id, entry.to);
+        //
+        //     let did = DeviceId::from_url(&entry.to)?;
+        //     // Try to deliver via WebSocket if recipient is online
+        //     if Self::try_websocket_delivery(state, sender_actor, recipient_actor_id, entry, did)
+        //         .await?
+        //     {
+        //         debug!("Delivered via WebSocket to {}", recipient_actor_id);
+        //         continue;
+        //     }
+        //
+        //     // Recipient offline or WebSocket failed, store in inbox
+        //     state
+        //         .storage
+        //         .inbox
+        //         .insert_inbox_entry(
+        //             recipient_actor_id,
+        //             did,
+        //             StoredInboxEntry {
+        //                 actor_id: sender_actor.to_string(),
+        //                 from_did: entry.from.clone(),
+        //                 content: entry.content.clone(),
+        //             },
+        //         )
+        //         .await?;
 
-        // Send push notifications for offline devices
-        if !did_to_notif.is_empty() {
-            state.notification_service.notify(&did_to_notif).await?;
-        }
-
+        // Queue for push notification
+        //     did_to_notif.push(did);
+        // }
+        //
+        // // Send push notifications for offline devices
+        // if !did_to_notif.is_empty() {
+        //     state.notification_service.notify(&did_to_notif).await?;
         Ok(())
+        //
     }
 
     /// Try to deliver message via WebSocket to online recipient
     /// Returns true if successfully delivered via WebSocket
-    async fn try_websocket_delivery(
+    async fn try_websocket_delivery<T: ActivityData>(
         state: &AppState,
-        sender_actor: &str,
-        recipient_actor_id: &str,
-        entry: &crate::activitypub::EncryptedMessageEntry,
+        activity: &T,
         did: DeviceId,
-    ) -> Result<bool, AppError> {
+    ) -> bool {
         // Check if the recipient device is online
         if let Some(sender) = state.sockets.get(&did) {
             info!(
                 "{} - {} online, trying to send via socket",
-                recipient_actor_id, entry.to
+                activity.to(),
+                did
             );
 
             // Create message for WebSocket
-            let ws_message = generate_create(
-                recipient_actor_id.to_string(),
-                sender_actor.to_string(),
-                entry.to.clone(),
-                entry.from.clone(),
-                entry.content.clone(),
-            );
+            if let Ok(message_json) = serde_json::to_string(&activity) {
+                // Try to send via WebSocket
+                if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
+                    warn!(
+                        "Failed to send to online client {}, falling back to inbox: {}",
+                        activity.to(),
+                        e
+                    );
+                    return false;
+                }
 
-            let message_json = serde_json::to_string(&ws_message)?;
-
-            // Try to send via WebSocket
-            if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
-                warn!(
-                    "Failed to send to online client {}, falling back to inbox: {}",
-                    recipient_actor_id, e
-                );
-                return Ok(false);
+                return true;
             }
-
-            return Ok(true);
         }
 
-        Ok(false)
+        false
     }
 
     /// TODO Deliver message to a remote recipient
-    async fn deliver_remote(
-        state: &AppState,
-        activity: &Create,
-        recipient_actor_id: &str,
-    ) -> Result<(), AppError> {
+    async fn deliver_remote(state: &AppState, activity: &Activity) -> Result<(), AppError> {
         // FIXME AI generated. Needs to be fixed.
 
         // 1. Fetch remote actor to get inbox URL
@@ -211,7 +290,7 @@ impl MessagingService {
 
         tracing::info!(
             "Remote delivery to {} not yet implemented",
-            recipient_actor_id
+            activity.as_base().to()
         );
         let _ = (state, activity); // Suppress unused warnings for now
         Ok(())

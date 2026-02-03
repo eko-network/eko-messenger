@@ -3,7 +3,7 @@ pub mod actor;
 pub mod collection;
 pub mod eko_types;
 
-pub use activity::{Activity, Create, generate_create};
+pub use activity::{Activity, Create};
 pub use actor::{Person, actor_uid, actor_url, create_person};
 pub use collection::OrderedCollection;
 pub use eko_types::{EncryptedMessage, EncryptedMessageEntry, PreKeyBundle};

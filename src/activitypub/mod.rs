@@ -9,5 +9,5 @@ pub use handlers::{
 
 pub use types::{
     Activity, Create, EncryptedMessage, EncryptedMessageEntry, OrderedCollection, Person,
-    PreKeyBundle, actor_uid, actor_url, create_person, generate_create,
+    PreKeyBundle, actor_uid, actor_url, create_person,
 };

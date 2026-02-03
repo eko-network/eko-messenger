@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    activitypub::{Activity, OrderedCollection, actor_url, types::generate_create},
+    activitypub::{Activity, OrderedCollection, actor_url},
     auth::Claims,
     errors::AppError,
 };
@@ -35,21 +35,8 @@ pub async fn get_inbox(
 
     info!("returned {} items to {}", items.len(), uid);
 
-    let activities: Vec<Activity> = items
-        .into_iter()
-        .map(|i| {
-            generate_create(
-                actor_id.clone(),
-                i.actor_id.clone(),
-                did.to_url(&state.domain),
-                i.from_did,
-                i.content,
-            )
-        })
-        .collect();
-
     let inbox_url = format!("{}/inbox", actor_id);
-    let collection = OrderedCollection::new(inbox_url, activities);
+    let collection = OrderedCollection::new(inbox_url, items);
 
     Ok(Json(collection))
 }

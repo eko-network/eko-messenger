@@ -35,7 +35,7 @@ where
 }
 
 /// Represents an encrypted message in the Eko protocol
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EncryptedMessage {
     #[serde(rename = "@context")]
@@ -51,7 +51,7 @@ pub struct EncryptedMessage {
 
 /// A single encrypted message entry for a specific device
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EncryptedMessageEntry {
     pub to: String,
     pub from: String,

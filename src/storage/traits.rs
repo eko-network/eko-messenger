@@ -1,5 +1,5 @@
 use crate::{
-    activitypub::types::eko_types::DeviceAction,
+    activitypub::{Activity, Create, types::eko_types::DeviceAction},
     devices::DeviceId,
     errors::AppError,
     storage::models::{
@@ -12,19 +12,23 @@ use uuid::Uuid;
 
 #[async_trait]
 pub trait InboxStore: Send + Sync {
-    /// Returns all of the activities in an actors inbox
+    /// Returns all of the activities in an actors inbox for a specific device.
     async fn inbox_activities(
         &self,
         inbox_actor_id: &str,
         did: DeviceId,
-    ) -> Result<Vec<StoredInboxEntry>, AppError>;
+    ) -> Result<Vec<Activity>, AppError>;
 
-    /// Links an inbox to an existing stored activity.
-    async fn insert_inbox_entry(
+    /// Stores an Activity. If the activity is a deliver it will have a side affect of removing
+    /// related creates
+    // async fn insert_inbox_entry(&self, entry: Activity) -> Result<(), AppError>;
+    /// Stores a create this should mark the message as needing delivery for all devices in the
+    /// entries
+    async fn insert_create(&self, create: &Create) -> Result<(), AppError>;
+    async fn insert_non_create(
         &self,
-        inbox_actor_id: &str,
-        to_did: DeviceId,
-        entry: StoredInboxEntry,
+        activity: &Activity,
+        dids: &Vec<DeviceId>,
     ) -> Result<(), AppError>;
 }
 
@@ -93,10 +97,10 @@ pub trait NotificationStore: Send + Sync {
         endpoint: &web_push::SubscriptionInfo,
     ) -> Result<(), AppError>;
     async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError>;
-    async fn retrive_endpoints(
+    async fn retrive_endpoint(
         &self,
-        dids: &[DeviceId],
-    ) -> Result<Vec<(web_push::SubscriptionInfo, DeviceId)>, AppError>;
+        dids: DeviceId,
+    ) -> Result<(web_push::SubscriptionInfo, DeviceId), AppError>;
 }
 
 #[async_trait]
