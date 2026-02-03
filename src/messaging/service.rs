@@ -183,47 +183,58 @@ impl MessagingService {
                         .await?;
                 }
             }
-            Activity::Delivered(delivered) => {}
+            Activity::Delivered(delivered) => {
+                let create_id = &delivered.object;
+
+                // Delete the delivery request for this Create and device
+                // Returns true if found and deleted, false if not found
+                let was_deleted = state
+                    .storage
+                    .inbox
+                    .delete_delivery(create_id, from_did)
+                    .await?;
+
+                if !was_deleted {
+                    // The delivery request doesn't exist - either already delivered or not a Create
+                    warn!(
+                        "Delivered activity {} references non-existent delivery for create {} and device {}",
+                        delivered.id.as_deref().unwrap_or("unknown"),
+                        create_id,
+                        from_did
+                    );
+                    return Ok(());
+                }
+
+                // Check if this is the first delivery for this message
+                // The server still tracks all deliveries, but only notifies the sender once
+                let is_first_delivery = state.storage.inbox.is_first_delivery(create_id).await?;
+
+                // don't sync deliveries to yourself and don't send duplicates for the same message
+                if !is_sync_message && is_first_delivery {
+                    let mut failed_dids = Vec::new();
+
+                    for device_url in fanout {
+                        if let Ok(target_did) = DeviceId::from_url(&device_url) {
+                            // Try to send via websocket
+                            if !Self::try_websocket_delivery(state, activity, target_did).await {
+                                failed_dids.push(target_did);
+                            }
+                        }
+                    }
+
+                    // If any devices failed to receive via websocket, insert the activity
+                    if !failed_dids.is_empty() {
+                        state
+                            .storage
+                            .inbox
+                            .insert_non_create(activity, &failed_dids)
+                            .await?;
+                    }
+                }
+            }
         };
 
-        // let mut did_to_notif: Vec<_> = Vec::with_capacity(message.content.len());
-
-        // for entry in &message.content {
-        //     info!("SEND for {}, {}", recipient_actor_id, entry.to);
-        //
-        //     let did = DeviceId::from_url(&entry.to)?;
-        //     // Try to deliver via WebSocket if recipient is online
-        //     if Self::try_websocket_delivery(state, sender_actor, recipient_actor_id, entry, did)
-        //         .await?
-        //     {
-        //         debug!("Delivered via WebSocket to {}", recipient_actor_id);
-        //         continue;
-        //     }
-        //
-        //     // Recipient offline or WebSocket failed, store in inbox
-        //     state
-        //         .storage
-        //         .inbox
-        //         .insert_inbox_entry(
-        //             recipient_actor_id,
-        //             did,
-        //             StoredInboxEntry {
-        //                 actor_id: sender_actor.to_string(),
-        //                 from_did: entry.from.clone(),
-        //                 content: entry.content.clone(),
-        //             },
-        //         )
-        //         .await?;
-
-        // Queue for push notification
-        //     did_to_notif.push(did);
-        // }
-        //
-        // // Send push notifications for offline devices
-        // if !did_to_notif.is_empty() {
-        //     state.notification_service.notify(&did_to_notif).await?;
         Ok(())
-        //
     }
 
     /// Try to deliver message via WebSocket to online recipient

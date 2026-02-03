@@ -1,9 +1,5 @@
 use crate::{
-    AppState,
-    activitypub::types::{actor_url, generate_create},
-    auth::Claims,
-    devices::DeviceId,
-    errors::AppError,
+    AppState, activitypub::types::actor_url, auth::Claims, devices::DeviceId, errors::AppError,
 };
 use axum::{
     Extension,
@@ -48,25 +44,17 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
     {
         Ok(inbox_items) => {
             for item in inbox_items {
-                let message = generate_create(
-                    actor_id.clone(),
-                    item.actor_id,
-                    claims.did.to_url(&state.domain),
-                    item.from_did,
-                    item.content,
-                );
-
-                let message_json = serde_json::to_string(&message).unwrap();
-
-                if tx
-                    .send(Message::Text(Utf8Bytes::from(message_json)))
-                    .is_err()
-                {
-                    warn!(
-                        "Failed to send offline message to {} - {}",
-                        claims.sub, claims.did
-                    );
-                    break;
+                if let Ok(message_json) = serde_json::to_string(&item) {
+                    if tx
+                        .send(Message::Text(Utf8Bytes::from(message_json)))
+                        .is_err()
+                    {
+                        warn!(
+                            "Failed to send offline message to {} - {}",
+                            claims.sub, claims.did
+                        );
+                        break;
+                    }
                 }
             }
         }

@@ -2,9 +2,7 @@ use crate::{
     activitypub::{Activity, Create, types::eko_types::DeviceAction},
     devices::DeviceId,
     errors::AppError,
-    storage::models::{
-        RegisterDeviceResult, RotatedRefreshToken, StoredInboxEntry, StoredOutboxActivity,
-    },
+    storage::models::{RegisterDeviceResult, RotatedRefreshToken, StoredOutboxActivity},
 };
 /// Defines the interface to store and get information
 use async_trait::async_trait;
@@ -30,6 +28,15 @@ pub trait InboxStore: Send + Sync {
         activity: &Activity,
         dids: &Vec<DeviceId>,
     ) -> Result<(), AppError>;
+
+    /// Deletes a delivery request for a specific activity and device.
+    /// This will trigger cleanup of the activity and message entries if no other deliveries exist.
+    /// Returns true if the activity existed, false if it didn't (indicating it was already delivered or doesn't exist).
+    async fn delete_delivery(&self, activity_id: &str, did: &DeviceId) -> Result<bool, AppError>;
+
+    /// Checks if this is the first delivery for a given Create activity.
+    /// Returns true if no deliveries have been deleted yet (meaning this is the first one).
+    async fn is_first_delivery(&self, create_id: &str) -> Result<bool, AppError>;
 }
 
 #[async_trait]
