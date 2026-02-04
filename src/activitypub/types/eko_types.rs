@@ -1,4 +1,4 @@
-use crate::activitypub::types::{proof_condensor, single_item_vec};
+use crate::activitypub::types::{proof_condensor, single_item_vec, single_item_vec_borrowed};
 use crate::devices::DeviceId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -106,4 +106,18 @@ pub struct RevokeDevice {
     #[serde_as(as = "Option<Hex>")]
     pub prev: Option<[u8; 32]>,
     pub proof: Vec<DeviceProof>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedMessageView<'a> {
+    #[serde(rename = "@context")]
+    pub context: &'a serde_json::Value,
+    #[serde(rename = "type")]
+    pub type_field: &'a str,
+    pub id: Option<&'a str>,
+    pub content: &'a [EncryptedMessageEntry],
+    pub attributed_to: &'a str,
+    #[serde(with = "single_item_vec_borrowed")]
+    pub to: &'a str,
 }

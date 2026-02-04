@@ -25,7 +25,7 @@ use crate::{
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
-    websocket::{WebSockets, ws_handler},
+    websocket::{WebSocketService, handler::ws_handler},
 };
 use axum::middleware::from_fn_with_state;
 use axum::{
@@ -34,7 +34,6 @@ use axum::{
     routing::{get, post},
 };
 use axum_client_ip::ClientIpSource;
-use dashmap::DashMap;
 use std::{
     env::{self, var},
     net::SocketAddr,
@@ -49,7 +48,7 @@ pub struct AppState {
     pub domain: Arc<String>,
     pub auth: Arc<Auth>,
     pub storage: Arc<Storage>,
-    pub sockets: WebSockets,
+    pub sockets: Arc<WebSocketService>,
     pub notification_service: Arc<NotificationService>,
     pub oidc_provider: OidcProviderState,
 }
@@ -109,7 +108,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app_state = AppState {
         domain,
         auth: Arc::new(auth),
-        sockets: Arc::new(DashMap::new()),
+        sockets: Arc::new(WebSocketService::new()),
         notification_service: Arc::new(notification_service),
         storage,
         oidc_provider,

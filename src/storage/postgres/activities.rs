@@ -1,44 +1,14 @@
 use std::sync::Arc;
 
-use crate::activitypub::types::single_item_vec_borrowed;
+use crate::activitypub::types::eko_types::EncryptedMessageView;
 use async_trait::async_trait;
-use serde::Serialize;
 use sqlx::PgPool;
 
-use crate::activitypub::types::activity::ActivityType;
+use crate::activitypub::types::activity::{ActivityType, CreateView};
 use crate::activitypub::{Activity, Create, EncryptedMessageEntry};
 use crate::devices::DeviceId;
 use crate::errors::AppError;
 use crate::storage::traits::ActivityStore;
-
-#[derive(Serialize)]
-struct CreateStorageView<'a> {
-    #[serde(rename = "@context")]
-    context: &'a serde_json::Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<&'a str>,
-    actor: &'a str,
-    object: EncryptedMessageStorageView<'a>,
-    #[serde(with = "single_item_vec_borrowed")]
-    to: &'a str,
-    #[serde(rename = "type")]
-    type_field: &'static str,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EncryptedMessageStorageView<'a> {
-    #[serde(rename = "@context")]
-    context: &'a serde_json::Value,
-    #[serde(rename = "type")]
-    type_field: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<&'a str>,
-    content: &'a [EncryptedMessageEntry],
-    attributed_to: &'a str,
-    #[serde(with = "single_item_vec_borrowed")]
-    to: &'a str,
-}
 
 pub struct PostgresActivityStore {
     pool: PgPool,
@@ -115,11 +85,11 @@ impl ActivityStore for PostgresActivityStore {
 
         // Serialize with empty content array - entries are stored separately in message_entries table
         let empty_content: &[EncryptedMessageEntry] = &[];
-        let activity_view = CreateStorageView {
+        let activity_view = CreateView {
             context: &create.context,
             id: create.id.as_deref(),
             actor: &create.actor,
-            object: EncryptedMessageStorageView {
+            object: EncryptedMessageView {
                 context: &create.object.context,
                 type_field: &create.object.type_field,
                 id: create.object.id.as_deref(),

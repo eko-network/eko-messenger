@@ -2,7 +2,14 @@ use std::collections::HashSet;
 
 use crate::{
     AppState,
-    activitypub::{Activity, EncryptedMessageEntry, handlers::outbox::KEY_COLLECTION_URL},
+    activitypub::{
+        Activity,
+        handlers::outbox::KEY_COLLECTION_URL,
+        types::{
+            activity::{ActivityBase, CreateView},
+            eko_types::EncryptedMessageView,
+        },
+    },
     devices::DeviceId,
     errors::AppError,
 };
@@ -10,63 +17,6 @@ use axum::extract::ws::{Message, Utf8Bytes};
 use futures::future::join_all;
 use serde::Serialize;
 use tracing::{info, warn};
-
-pub trait ActivityData: Serialize {
-    fn id(&self) -> Option<&str>;
-    fn actor(&self) -> &str;
-    fn to(&self) -> &str;
-}
-
-#[derive(Serialize)]
-struct CreateView<'a> {
-    #[serde(rename = "@context")]
-    context: &'a serde_json::Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<&'a str>,
-    actor: &'a str,
-    object: EncryptedMessageView<'a>,
-    to: &'a str,
-    #[serde(rename = "type")]
-    type_field: &'static str,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EncryptedMessageView<'a> {
-    #[serde(rename = "@context")]
-    context: &'a serde_json::Value,
-    #[serde(rename = "type")]
-    type_field: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<&'a str>,
-    content: &'a [EncryptedMessageEntry],
-    attributed_to: &'a str,
-    to: &'a str,
-}
-
-impl ActivityData for Activity {
-    fn id(&self) -> Option<&str> {
-        self.as_base().id().map(|s| s.as_str())
-    }
-    fn actor(&self) -> &str {
-        self.as_base().actor()
-    }
-    fn to(&self) -> &str {
-        self.as_base().to()
-    }
-}
-
-impl<'a> ActivityData for CreateView<'a> {
-    fn id(&self) -> Option<&str> {
-        self.id
-    }
-    fn actor(&self) -> &str {
-        self.actor
-    }
-    fn to(&self) -> &str {
-        self.to
-    }
-}
 
 /// Main service for orchestrating message delivery
 pub struct MessagingService;
@@ -157,7 +107,11 @@ impl MessagingService {
                     };
 
                     if let Ok(did) = DeviceId::from_url(&entry.to) {
-                        if !Self::try_websocket_delivery(&state, &activity_view, did).await {
+                        if !state
+                            .sockets
+                            .try_websocket_delivery(&activity_view, did)
+                            .await
+                        {
                             if let Err(e) = state.notification_service.notify(did).await {
                                 warn!("Tried to notify {} Error: {:?}", entry.to, e);
                             }
@@ -173,7 +127,11 @@ impl MessagingService {
                 let device_url = take.to.trim_end_matches(KEY_COLLECTION_URL);
                 let target_did = DeviceId::from_url(device_url)?;
                 // try to send over socket, if it fails write to db
-                if !Self::try_websocket_delivery(&state, activity, target_did).await {
+                if !state
+                    .sockets
+                    .try_websocket_delivery(activity, target_did)
+                    .await
+                {
                     state
                         .storage
                         .activities
@@ -222,7 +180,11 @@ impl MessagingService {
                     for device_url in fanout {
                         if let Ok(target_did) = DeviceId::from_url(&device_url) {
                             // Try to send via websocket
-                            if !Self::try_websocket_delivery(state, activity, target_did).await {
+                            if !state
+                                .sockets
+                                .try_websocket_delivery(activity, target_did)
+                                .await
+                            {
                                 failed_dids.push(target_did);
                             }
                         }
@@ -235,46 +197,12 @@ impl MessagingService {
                             .activities
                             .insert_non_create(activity, &failed_dids)
                             .await?;
-                    } 
-                } 
+                    }
+                }
             }
         };
 
         Ok(())
-    }
-
-    /// Try to deliver message via WebSocket to online recipient
-    /// Returns true if successfully delivered via WebSocket
-    async fn try_websocket_delivery<T: ActivityData>(
-        state: &AppState,
-        activity: &T,
-        did: DeviceId,
-    ) -> bool {
-        // Check if the recipient device is online
-        if let Some(sender) = state.sockets.get(&did) {
-            info!(
-                "{} - {} online, trying to send via socket",
-                activity.to(),
-                did
-            );
-
-            // Create message for WebSocket
-            if let Ok(message_json) = serde_json::to_string(&activity) {
-                // Try to send via WebSocket
-                if let Err(e) = sender.send(Message::Text(Utf8Bytes::from(message_json))) {
-                    warn!(
-                        "Failed to send to online client {}, falling back to inbox: {}",
-                        activity.to(),
-                        e
-                    );
-                    return false;
-                }
-
-                return true;
-            }
-        }
-
-        false
     }
 
     /// TODO Deliver message to a remote recipient

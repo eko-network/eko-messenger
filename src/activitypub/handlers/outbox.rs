@@ -1,6 +1,10 @@
 use crate::{
-    AppState, activitypub::{actor_uid, types::activity::Activity}, auth::Claims,
-    devices::DeviceId, errors::AppError, messaging::MessagingService,
+    AppState,
+    activitypub::{actor_uid, types::activity::Activity},
+    auth::Claims,
+    devices::DeviceId,
+    errors::AppError,
+    messaging::MessagingService,
 };
 use axum::{
     Json, debug_handler,

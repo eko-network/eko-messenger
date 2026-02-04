@@ -4,7 +4,7 @@ use crate::common::*;
 #[tokio::test]
 async fn test_delivered_deletes_delivery_request() {
     let app = spawn_app().await;
-    
+
     let alice = TestUser::create(&app, "alice").await;
     let bob = TestUser::create(&app, "bob").await;
 
@@ -31,7 +31,7 @@ async fn test_delivered_deletes_delivery_request() {
 #[tokio::test]
 async fn test_delivered_fanout_to_sender_devices() {
     let app = spawn_app().await;
-    
+
     let mut alice = TestUser::create(&app, "alice").await;
     let bob = TestUser::create(&app, "bob").await;
 
@@ -55,14 +55,14 @@ async fn test_delivered_fanout_to_sender_devices() {
     let device0_inbox = alice.get_inbox_with_device(&app, 0).await;
     assert_collection_size(&device0_inbox, 1);
     assert_activity_type(&device0_inbox["orderedItems"][0], "Delivered");
-    
+
     // Devices 1 and 2 get both the sync Create AND the Delivered
     let device1_inbox = alice.get_inbox_with_device(&app, 1).await;
     let device2_inbox = alice.get_inbox_with_device(&app, 2).await;
-    
+
     assert_collection_size(&device1_inbox, 2);
     assert_collection_size(&device2_inbox, 2);
-    
+
     // One should be Create (from device sync), one should be Delivered
     let device1_types: Vec<&str> = device1_inbox["orderedItems"]
         .as_array()
@@ -79,7 +79,7 @@ async fn test_delivered_fanout_to_sender_devices() {
 #[tokio::test]
 async fn test_delivered_sent_only_once() {
     let app = spawn_app().await;
-    
+
     let alice = TestUser::create(&app, "alice").await;
     let mut bob = TestUser::create(&app, "bob").await;
 
@@ -99,7 +99,9 @@ async fn test_delivered_sent_only_once() {
     assert_collection_size(&bob_inbox_1, 1);
 
     // Bob's first device sends a Delivered
-    let delivered_response = bob.send_delivered_from_device(&app, 0, create_id, &alice).await;
+    let delivered_response = bob
+        .send_delivered_from_device(&app, 0, create_id, &alice)
+        .await;
     assert_success(delivered_response).await;
 
     // Alice should receive the Delivered (first delivery claimed)
@@ -112,7 +114,9 @@ async fn test_delivered_sent_only_once() {
     assert_collection_size(&bob_inbox_0_after, 0);
 
     // Bob's second device also sends a Delivered for the same Create
-    let delivered_response_2 = bob.send_delivered_from_device(&app, 1, create_id, &alice).await;
+    let delivered_response_2 = bob
+        .send_delivered_from_device(&app, 1, create_id, &alice)
+        .await;
     assert_success(delivered_response_2).await;
 
     // Bob's device 1 should also have the delivery deleted
@@ -129,14 +133,14 @@ async fn test_delivered_sent_only_once() {
 #[tokio::test]
 async fn test_delivered_for_nonexistent_create() {
     let app = spawn_app().await;
-    
+
     let alice = TestUser::create(&app, "alice").await;
     let bob = TestUser::create(&app, "bob").await;
 
     // Bob sends a Delivered for a Create that doesn't exist
     let fake_create_id = "https://example.com/activities/nonexistent-id";
     let delivered_response = bob.send_delivered(&app, fake_create_id, &alice).await;
-    
+
     // Should succeed (the activity is ignored per spec)
     assert_success(delivered_response).await;
 
@@ -149,7 +153,7 @@ async fn test_delivered_for_nonexistent_create() {
 #[tokio::test]
 async fn test_get_delivered_from_inbox_deletes_delivery() {
     let app = spawn_app().await;
-    
+
     let alice = TestUser::create(&app, "alice").await;
     let bob = TestUser::create(&app, "bob").await;
 
@@ -177,14 +181,16 @@ async fn test_get_delivered_from_inbox_deletes_delivery() {
 #[tokio::test]
 async fn test_multiple_creates_with_delivered() {
     let app = spawn_app().await;
-    
+
     let alice = TestUser::create(&app, "alice").await;
     let bob = TestUser::create(&app, "bob").await;
 
     // Alice sends 3 messages to Bob
     let mut create_ids = Vec::new();
     for i in 1..=3 {
-        let response = alice.send_message_to(&app, &bob, &format!("Message {}", i)).await;
+        let response = alice
+            .send_message_to(&app, &bob, &format!("Message {}", i))
+            .await;
         let create_response = assert_success(response).await;
         let create_activity: serde_json::Value = create_response.json().await.unwrap();
         let create_id = create_activity["id"].as_str().unwrap().to_string();
@@ -219,7 +225,7 @@ async fn test_multiple_creates_with_delivered() {
 #[tokio::test]
 async fn test_delivered_isolation_between_users() {
     let app = spawn_app().await;
-    
+
     let alice = TestUser::create(&app, "alice").await;
     let mut bob = TestUser::create(&app, "bob").await;
     let charlie = TestUser::create(&app, "charlie").await;
@@ -232,10 +238,14 @@ async fn test_delivered_isolation_between_users() {
     let create_activity_bob: serde_json::Value = create_response_bob.json().await.unwrap();
     let create_id_bob = create_activity_bob["id"].as_str().unwrap();
 
-    alice.send_message_to(&app, &charlie, "Message to Charlie").await;
+    alice
+        .send_message_to(&app, &charlie, "Message to Charlie")
+        .await;
 
     // Bob sends Delivered
-    let delivered_response = bob.send_delivered_from_device(&app, 0, create_id_bob, &alice).await;
+    let delivered_response = bob
+        .send_delivered_from_device(&app, 0, create_id_bob, &alice)
+        .await;
     assert_success(delivered_response).await;
 
     // Bob's first device should no longer have the message

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM deliveries\n            WHERE activity_id = ANY($1) AND to_did = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "237e3bafd71fb040241ad5f17961ab87f058a3a8b14d6a24b832dc3c174cbe8c"
+}
