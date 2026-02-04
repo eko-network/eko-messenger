@@ -13,10 +13,8 @@ use crate::{
     devices::DeviceId,
     errors::AppError,
 };
-use axum::extract::ws::{Message, Utf8Bytes};
 use futures::future::join_all;
-use serde::Serialize;
-use tracing::{info, warn};
+use tracing::warn;
 
 /// Main service for orchestrating message delivery
 pub struct MessagingService;
