@@ -13,6 +13,8 @@ pub struct StoredActivity {
 }
 #[derive(Debug, Clone)]
 pub struct StoredInboxEntry {
+    pub id: String,
+    pub target_id: String,
     pub actor_id: String,
     pub from_did: String,
     pub content: Vec<u8>,

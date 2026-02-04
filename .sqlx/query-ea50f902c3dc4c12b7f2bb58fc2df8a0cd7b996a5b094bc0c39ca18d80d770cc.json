@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                ia.id,\n                ia.type::text as \"activity_type!\",\n                ia.activity_json,\n                me.from_did as \"from_did?\",\n                me.content as \"content?\"\n            FROM inbox_activities ia\n            JOIN deliveries d ON ia.id = d.activity_id\n            LEFT JOIN message_entries me ON ia.id = me.activity_id AND me.to_did = d.to_did\n            WHERE d.to_did = $1\n            ORDER BY ia.created_at ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "activity_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "activity_json",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "from_did?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "content?",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ea50f902c3dc4c12b7f2bb58fc2df8a0cd7b996a5b094bc0c39ca18d80d770cc"
+}

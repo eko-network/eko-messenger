@@ -38,37 +38,33 @@ impl NotificationStore for PostgresNotificationStore {
 
         Ok(())
     }
-    async fn retrive_endpoints(
-        &self,
-        dids: &[DeviceId],
-    ) -> Result<Vec<(SubscriptionInfo, DeviceId)>, AppError> {
-        let uuid_dids: Vec<_> = dids.iter().map(|d| d.as_uuid()).collect();
-        let rows = sqlx::query!(
+    async fn retrive_endpoint(&self, did: DeviceId) -> Option<(SubscriptionInfo, DeviceId)> {
+        // let uuid_dids: Vec<_> = dids.iter().map(|d| d.as_uuid()).collect();
+        if let Some(row) = sqlx::query!(
             r#"
-            SELECT did, endpoint, p256dh, auth from notifications WHERE did = ANY($1)
+            SELECT did, endpoint, p256dh, auth from notifications WHERE did = $1
             "#,
-            &uuid_dids,
+            did.as_uuid(),
         )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let endpoints: Vec<(SubscriptionInfo, DeviceId)> = rows
-            .into_iter()
-            .map(|row| {
-                (
-                    SubscriptionInfo {
-                        endpoint: row.endpoint,
-                        keys: SubscriptionKeys {
-                            p256dh: row.p256dh,
-                            auth: row.auth,
-                        },
+        .fetch_optional(&self.pool)
+        .await
+        .ok()?
+        {
+            let endpoint: (SubscriptionInfo, DeviceId) = (
+                SubscriptionInfo {
+                    endpoint: row.endpoint,
+                    keys: SubscriptionKeys {
+                        p256dh: row.p256dh,
+                        auth: row.auth,
                     },
-                    DeviceId::new(row.did),
-                )
-            })
-            .collect();
+                },
+                DeviceId::new(row.did),
+            );
 
-        Ok(endpoints)
+            Some(endpoint)
+        } else {
+            None
+        }
     }
 
     async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError> {

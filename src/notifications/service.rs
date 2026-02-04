@@ -1,7 +1,6 @@
 use std::{env::var, sync::Arc};
 
-use anyhow::Context;
-use futures::future::join_all;
+use anyhow::{self, Context};
 use tracing::info;
 use web_push::{
     ContentEncoding, HyperWebPushClient, PartialVapidSignatureBuilder, SubscriptionInfo,
@@ -47,34 +46,31 @@ impl NotificationService {
             .await?;
         Ok(())
     }
-    pub async fn notify(&self, dids: &[DeviceId]) -> Result<(), AppError> {
-        info!("Sending {} notifications", dids.len());
-        let endpoints = self.storage.notifications.retrive_endpoints(dids).await?;
-        join_all(endpoints.into_iter().map(|(sub, did)| {
-            let client = self.client.clone();
-            let vapid = self.vapid.clone();
-            async move {
-                let Ok(sig) = vapid.add_sub_info(&sub).build() else {
-                    tracing::error!("Failed to build vapid signature");
-                    return;
-                };
-                let mut message = WebPushMessageBuilder::new(&sub);
-                message.set_vapid_signature(sig);
-                message.set_payload(ContentEncoding::Aes128Gcm, "wake".as_bytes());
+    pub async fn notify(&self, did: DeviceId) -> Result<(), AppError> {
+        info!("Sending {} notification", did);
+        let endpoint = self
+            .storage
+            .notifications
+            .retrive_endpoint(did)
+            .await
+            .ok_or(anyhow::anyhow!("No endpoint found"))?;
+        let (sub, did) = endpoint;
+        let Ok(sig) = self.vapid.clone().add_sub_info(&sub).build() else {
+            return Err(anyhow::anyhow!("Failed to build vapid signature").into());
+        };
+        let mut message = WebPushMessageBuilder::new(&sub);
+        message.set_vapid_signature(sig);
+        message.set_payload(ContentEncoding::Aes128Gcm, "wake".as_bytes());
 
-                let Ok(payload) = message.build() else {
-                    tracing::error!("Failed to build notifiaction");
-                    return;
-                };
-                if let Err(e) = client.send(payload).await {
-                    tracing::error!("POST failed: {e}");
-                    let _ = self.storage.notifications.delete_endpoint(did).await;
-                    return;
-                }
-                tracing::debug!("Sent Notification to: {}", did)
-            }
-        }))
-        .await;
+        let Ok(payload) = message.build() else {
+            tracing::error!("Failed to build notifiaction");
+            return Err(anyhow::anyhow!("Failed to build notifiaction").into());
+        };
+        if let Err(e) = self.client.send(payload).await {
+            let _ = self.storage.notifications.delete_endpoint(did).await;
+            return Err(anyhow::anyhow!("POST failed: {}", e).into());
+        }
+        tracing::debug!("Sent Notification to: {}", did);
         Ok(())
     }
 }

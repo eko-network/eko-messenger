@@ -288,8 +288,44 @@ impl TestUser {
             context: json!("https://www.w3.org/ns/activitystreams"),
             id: None,
             actor: self.actor_id.clone(),
+            to: envelope.to.clone(),
             object: envelope,
         })
+    }
+
+    /// Create a Delivered activity for a given Create activity ID
+    pub fn create_delivered_activity(&self, create_id: &str, recipient: &TestUser) -> Activity {
+        Activity::Delivered(eko_messenger::activitypub::Delivered {
+            context: json!("https://www.w3.org/ns/activitystreams"),
+            id: None,
+            actor: self.actor_id.clone(),
+            to: recipient.actor_id.clone(),
+            object: create_id.to_string(),
+        })
+    }
+
+    /// Send a Delivered activity from a specific device
+    pub async fn send_delivered_from_device(
+        &self,
+        app: &TestApp,
+        device_index: usize,
+        create_id: &str,
+        recipient: &TestUser,
+    ) -> reqwest::Response {
+        let activity = self.create_delivered_activity(create_id, recipient);
+        self.post_to_outbox_with_device(app, activity, device_index)
+            .await
+    }
+
+    /// Send a Delivered activity from the first device
+    pub async fn send_delivered(
+        &self,
+        app: &TestApp,
+        create_id: &str,
+        recipient: &TestUser,
+    ) -> reqwest::Response {
+        self.send_delivered_from_device(app, 0, create_id, recipient)
+            .await
     }
 }
 
@@ -346,7 +382,7 @@ impl SignalEnvelope {
             id: None,
             content: self.messages,
             attributed_to: actor_id.to_string(),
-            to: vec![recipient_id.to_string()],
+            to: recipient_id.to_string(),
         }
     }
 }

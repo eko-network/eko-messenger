@@ -266,6 +266,7 @@ Example: a `Delivered` Activity
 {
   "@context": "https://www.w3.org/ns/activitystreams",
   "id": "https://eko.network/activities/id",
+  "from": "https://eko.network/devices/id",
   "type": "Delivered",
   "actor": "https://eko.network/user/user1",
   "to": "https://other.network/user/user2",

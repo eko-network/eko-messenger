@@ -9,12 +9,12 @@ pub use local_auth::LocalIdentityProvider;
 #[cfg(feature = "auth-firebase")]
 use ::eko_messenger::auth::FirebaseAuth;
 
-use dashmap::DashMap;
 use eko_messenger::{
     AppState, app,
     auth::{Auth, LoginRequest, LoginResponse, PreKey, SignedPreKey},
     notifications::NotificationService,
     storage::{Storage, postgres::connection::postgres_storage},
+    websocket::WebSocketService,
 };
 use reqwest::Client;
 use sqlx::PgPool;
@@ -129,7 +129,7 @@ pub async fn spawn_app_with_options(options: SpawnOptions) -> TestApp {
         domain: domain.clone(),
         auth: Arc::new(auth_service),
         storage: storage.clone(),
-        sockets: Arc::new(DashMap::new()),
+        sockets: Arc::new(WebSocketService::new()),
         notification_service: Arc::new(notification_service),
         oidc_provider: None,
     };

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO message_entries (from_did, to_did, activity_id, content)\n                VALUES ($1, $2, $3, $4)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5226ae4d1e5c0906c659144ebc964e6dfb8f98b9dfe7d91f7f083ff52d33576"
+}

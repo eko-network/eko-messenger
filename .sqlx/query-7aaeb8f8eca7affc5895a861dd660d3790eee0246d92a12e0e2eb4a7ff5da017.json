@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO deliveries (activity_id, to_did)\n                VALUES ($1, $2)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7aaeb8f8eca7affc5895a861dd660d3790eee0246d92a12e0e2eb4a7ff5da017"
+}

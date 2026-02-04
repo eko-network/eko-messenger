@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO inbox_activities (id, type, activity_json)\n            VALUES ($1, $2, $3)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        {
+          "Custom": {
+            "name": "activity_type",
+            "kind": {
+              "Enum": [
+                "Create",
+                "Delivered",
+                "Reject",
+                "Confirm",
+                "Take"
+              ]
+            }
+          }
+        },
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d95b1bb45d3f52dcaa69b339b24a29cbd321b918a13a077643c701073f7cea78"
+}
