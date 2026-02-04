@@ -1,6 +1,6 @@
 use crate::{
-    AppState, activitypub::types::activity::Activity, auth::Claims, devices::DeviceId,
-    errors::AppError, messaging::MessagingService,
+    AppState, activitypub::{actor_uid, types::activity::Activity}, auth::Claims,
+    devices::DeviceId, errors::AppError, messaging::MessagingService,
 };
 use axum::{
     Json, debug_handler,
@@ -27,7 +27,9 @@ pub async fn post_to_outbox(
         ));
     }
 
-    if claims.sub != *payload.as_base().actor() {
+    // Extract the UID from the actor URL and compare with the authenticated user
+    let extracted_actor_uid = actor_uid(payload.as_base().actor())?;
+    if claims.sub != extracted_actor_uid {
         info!(
             "{} tried to send a message as {}",
             claims.sub,
@@ -39,7 +41,8 @@ pub async fn post_to_outbox(
     }
 
     if let Activity::Create(create) = &mut payload {
-        if claims.sub != create.object.attributed_to {
+        let attributed_uid = actor_uid(&create.object.attributed_to)?;
+        if claims.sub != attributed_uid {
             return Err(AppError::Forbidden(
                 "Messages may not be sent on behalf of other users".into(),
             ));

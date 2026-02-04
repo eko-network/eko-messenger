@@ -41,7 +41,7 @@ struct EncryptedMessageView<'a> {
     id: Option<&'a str>,
     content: &'a [EncryptedMessageEntry],
     attributed_to: &'a str,
-    to: &'a [String],
+    to: &'a str,
 }
 
 impl ActivityData for Activity {
@@ -132,8 +132,7 @@ impl MessagingService {
                     fanout.remove(&from_did_url);
                 }
 
-                if to_dids.len() != fanout.len() || !!to_dids.iter().all(|&id| fanout.contains(id))
-                {
+                if to_dids.len() != fanout.len() || !to_dids.iter().all(|&id| fanout.contains(id)) {
                     //TODO Reject activity
                     return Err(AppError::BadRequest("device_list_mismatch".into()));
                 }
@@ -193,8 +192,12 @@ impl MessagingService {
 
                 let create_id = &delivered.object;
 
-                // Delete the delivery request for this Create and device
-                // Returns true if found and deleted, false if not found
+                let is_first_delivery = state
+                    .storage
+                    .activities
+                    .claim_first_delivery(create_id)
+                    .await?;
+
                 let was_deleted = state
                     .storage
                     .activities
@@ -211,14 +214,6 @@ impl MessagingService {
                     );
                     return Ok(());
                 }
-
-                // Check if this is the first delivery for this message
-                // The server still tracks all deliveries, but only notifies the sender once
-                let is_first_delivery = state
-                    .storage
-                    .activities
-                    .claim_first_delivery(create_id)
-                    .await?;
 
                 // don't sync deliveries to yourself and don't send duplicates for the same message
                 if !is_sync_message && is_first_delivery {
@@ -240,8 +235,8 @@ impl MessagingService {
                             .activities
                             .insert_non_create(activity, &failed_dids)
                             .await?;
-                    }
-                }
+                    } 
+                } 
             }
         };
 

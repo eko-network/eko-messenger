@@ -48,7 +48,12 @@ impl NotificationService {
     }
     pub async fn notify(&self, did: DeviceId) -> Result<(), AppError> {
         info!("Sending {} notification", did);
-        let endpoint = self.storage.notifications.retrive_endpoint(did).await?;
+        let endpoint = self
+            .storage
+            .notifications
+            .retrive_endpoint(did)
+            .await
+            .ok_or(anyhow::anyhow!("No endpoint found"))?;
         let (sub, did) = endpoint;
         let Ok(sig) = self.vapid.clone().add_sub_info(&sub).build() else {
             return Err(anyhow::anyhow!("Failed to build vapid signature").into());

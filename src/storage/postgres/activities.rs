@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::activitypub::types::single_item_vec_borrowed;
 use async_trait::async_trait;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -18,6 +19,7 @@ struct CreateStorageView<'a> {
     id: Option<&'a str>,
     actor: &'a str,
     object: EncryptedMessageStorageView<'a>,
+    #[serde(with = "single_item_vec_borrowed")]
     to: &'a str,
     #[serde(rename = "type")]
     type_field: &'static str,
@@ -34,7 +36,8 @@ struct EncryptedMessageStorageView<'a> {
     id: Option<&'a str>,
     content: &'a [EncryptedMessageEntry],
     attributed_to: &'a str,
-    to: &'a [String],
+    #[serde(with = "single_item_vec_borrowed")]
+    to: &'a str,
 }
 
 pub struct PostgresActivityStore {
@@ -72,6 +75,7 @@ impl ActivityStore for PostgresActivityStore {
         .await?;
 
         let mut activities = Vec::new();
+        let mut activity_ids_to_delete: Vec<String> = Vec::new();
         let did_url = did.to_url(&self.domain);
         for row in rows {
             let mut activity: Activity = serde_json::from_value(row.activity_json)?;
@@ -87,14 +91,17 @@ impl ActivityStore for PostgresActivityStore {
                     }
                 }
                 Activity::Take(_) | Activity::Delivered(_) => {
-                    if let Some(id) = activity.as_base().id() {
-                        //TODO run these all at one time
-                        self.delete_delivery(id, &did).await?;
-                    }
+                    activity_ids_to_delete.push(row.id.clone());
                 }
             };
 
             activities.push(activity);
+        }
+
+        // Delete all deliveries at once
+        if !activity_ids_to_delete.is_empty() {
+            self.delete_deliveries(&activity_ids_to_delete, &did)
+                .await?;
         }
 
         Ok(activities)
@@ -237,6 +244,29 @@ impl ActivityStore for PostgresActivityStore {
         Ok(result.rows_affected() > 0)
     }
 
+    async fn delete_deliveries(
+        &self,
+        activity_ids: &[String],
+        did: &DeviceId,
+    ) -> Result<u64, AppError> {
+        if activity_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM deliveries
+            WHERE activity_id = ANY($1) AND to_did = $2
+            "#,
+            activity_ids,
+            did.as_uuid()
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     async fn claim_first_delivery(&self, create_id: &str) -> Result<bool, AppError> {
         // Atomically check if this is the first delivery and set the timestamp if so
         // Returns true if first_delivery_at was NULL (this is the first delivery)
@@ -252,7 +282,7 @@ impl ActivityStore for PostgresActivityStore {
         .fetch_optional(&self.pool)
         .await?;
 
-        // If a row was updated, this was the first delivery
-        Ok(result.is_some())
+        let was_claimed = result.is_some();
+        Ok(was_claimed)
     }
 }

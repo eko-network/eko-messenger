@@ -38,32 +38,33 @@ impl NotificationStore for PostgresNotificationStore {
 
         Ok(())
     }
-    async fn retrive_endpoint(
-        &self,
-        did: DeviceId,
-    ) -> Result<(SubscriptionInfo, DeviceId), AppError> {
+    async fn retrive_endpoint(&self, did: DeviceId) -> Option<(SubscriptionInfo, DeviceId)> {
         // let uuid_dids: Vec<_> = dids.iter().map(|d| d.as_uuid()).collect();
-        let row = sqlx::query!(
+        if let Some(row) = sqlx::query!(
             r#"
             SELECT did, endpoint, p256dh, auth from notifications WHERE did = $1
             "#,
             did.as_uuid(),
         )
-        .fetch_one(&self.pool)
-        .await?;
-
-        let endpoint: (SubscriptionInfo, DeviceId) = (
-            SubscriptionInfo {
-                endpoint: row.endpoint,
-                keys: SubscriptionKeys {
-                    p256dh: row.p256dh,
-                    auth: row.auth,
+        .fetch_optional(&self.pool)
+        .await
+        .ok()?
+        {
+            let endpoint: (SubscriptionInfo, DeviceId) = (
+                SubscriptionInfo {
+                    endpoint: row.endpoint,
+                    keys: SubscriptionKeys {
+                        p256dh: row.p256dh,
+                        auth: row.auth,
+                    },
                 },
-            },
-            DeviceId::new(row.did),
-        );
+                DeviceId::new(row.did),
+            );
 
-        Ok(endpoint)
+            Some(endpoint)
+        } else {
+            None
+        }
     }
 
     async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError> {

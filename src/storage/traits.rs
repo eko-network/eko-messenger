@@ -4,21 +4,20 @@ use crate::{
     errors::AppError,
     storage::models::{RegisterDeviceResult, RotatedRefreshToken},
 };
-/// Defines the interface to store and get information
 use async_trait::async_trait;
 use uuid::Uuid;
 
 #[async_trait]
 pub trait ActivityStore: Send + Sync {
-    /// Returns all of the activities in an actors inbox for a specific device.
+    /// Returns all of the activities in an actors inbox for a specific device. This has side
+    /// affects for `Delivered` and `Take` causing their corresponding deliver requests to be
+    /// removed
     async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
 
-    /// Stores an Activity. If the activity is a deliver it will have a side affect of removing
-    /// related creates
-    // async fn insert_inbox_entry(&self, entry: Activity) -> Result<(), AppError>;
     /// Stores a create this should mark the message as needing delivery for all devices in the
-    /// entries
     async fn insert_create(&self, create: &Create) -> Result<(), AppError>;
+    /// Stores an Activity. If the activity is a deliver it will have a side affect of removing
+    /// related message entries.
     async fn insert_non_create(
         &self,
         activity: &Activity,
@@ -27,11 +26,19 @@ pub trait ActivityStore: Send + Sync {
 
     /// Deletes a delivery request for a specific activity and device.
     /// This will trigger cleanup of the activity and message entries if no other deliveries exist.
-    /// Returns true if the activity existed, false if it didn't (indicating it was already delivered or doesn't exist).
+    /// Returns true if the activity existed, false if it didn't
     async fn delete_delivery(&self, activity_id: &str, did: &DeviceId) -> Result<bool, AppError>;
 
+    /// Deletes delivery requests for multiple activities for a specific device.
+    /// This is more efficient than calling delete_delivery multiple times.
+    /// Returns the number of deliveries deleted.
+    async fn delete_deliveries(
+        &self,
+        activity_ids: &[String],
+        did: &DeviceId,
+    ) -> Result<u64, AppError>;
+
     /// Checks if this is the first delivery for a given Create activity.
-    /// Returns true if no deliveries have been deleted yet (meaning this is the first one).
     async fn claim_first_delivery(&self, create_id: &str) -> Result<bool, AppError>;
 }
 
@@ -98,7 +105,7 @@ pub trait NotificationStore: Send + Sync {
     async fn retrive_endpoint(
         &self,
         dids: DeviceId,
-    ) -> Result<(web_push::SubscriptionInfo, DeviceId), AppError>;
+    ) -> Option<(web_push::SubscriptionInfo, DeviceId)>;
 }
 
 #[async_trait]

@@ -1,38 +1,9 @@
+use crate::activitypub::types::{proof_condensor, single_item_vec};
 use crate::devices::DeviceId;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::base64::Base64;
 use serde_with::{hex::Hex, serde_as};
-
-/// Custom deserializer for proof field that accepts either a single object or a list
-fn deserialize_proof<'de, D>(deserializer: D) -> Result<Vec<DataIntegrityProof>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum ProofOrList {
-        Single(DataIntegrityProof),
-        Multiple(Vec<DataIntegrityProof>),
-    }
-
-    match ProofOrList::deserialize(deserializer)? {
-        ProofOrList::Single(proof) => Ok(vec![proof]),
-        ProofOrList::Multiple(proofs) => Ok(proofs),
-    }
-}
-
-/// Custom serializer for proof field that outputs a single object or a list
-fn serialize_proof<S>(proofs: &Vec<DataIntegrityProof>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if proofs.len() == 1 {
-        proofs[0].serialize(serializer)
-    } else {
-        proofs.serialize(serializer)
-    }
-}
 
 /// Represents an encrypted message in the Eko protocol
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -46,7 +17,8 @@ pub struct EncryptedMessage {
     pub id: Option<String>,
     pub content: Vec<EncryptedMessageEntry>,
     pub attributed_to: String,
-    pub to: Vec<String>,
+    #[serde(with = "single_item_vec")]
+    pub to: String,
 }
 
 /// A single encrypted message entry for a specific device
@@ -99,10 +71,7 @@ pub struct AddDevice {
     #[serde_as(as = "Base64")]
     pub identity_key: Vec<u8>,
     pub registration_id: i32,
-    #[serde(
-        deserialize_with = "deserialize_proof",
-        serialize_with = "serialize_proof"
-    )]
+    #[serde(with = "proof_condensor")]
     pub proof: Vec<DataIntegrityProof>,
 }
 

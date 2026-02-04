@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT did, endpoint, p256dh, auth from notifications WHERE did = ANY($1)\n            ",
+  "query": "\n            SELECT did, endpoint, p256dh, auth from notifications WHERE did = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -26,7 +26,7 @@
     ],
     "parameters": {
       "Left": [
-        "UuidArray"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "cfb392ce11ca76dfb1fd7fe211ab113ce750978ecde9ffd46dd4445bf64ae3b8"
+  "hash": "db8b2f11000330595ebacb0bca6af009557bd1740db21d7bef556e1ab242f1c8"
 }
