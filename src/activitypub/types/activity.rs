@@ -54,6 +54,16 @@ macro_rules! impl_activity_base {
     };
 }
 
+#[derive(Debug, sqlx::Type)]
+#[sqlx(type_name = "activity_type", rename_all = "PascalCase")]
+pub enum ActivityType {
+    Create,
+    Take,
+    Delivered,
+    Update,
+    Reject,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Activity {
@@ -76,6 +86,14 @@ impl Activity {
             Activity::Create(c) => c,
             Activity::Take(t) => t,
             Activity::Delivered(d) => d,
+        }
+    }
+
+    pub fn activity_type(&self) -> ActivityType {
+        match self {
+            Activity::Create(_) => ActivityType::Create,
+            Activity::Take(_) => ActivityType::Take,
+            Activity::Delivered(_) => ActivityType::Delivered,
         }
     }
 }

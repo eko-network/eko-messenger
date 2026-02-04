@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE inbox_activities\n            SET first_delivery_at = NOW()\n            WHERE id = $1 AND first_delivery_at IS NULL\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f8a6e05a47b3b53e7dfd4936f9f599e538570073e9131c4fc09959ba8a5b1098"
+}

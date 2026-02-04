@@ -99,16 +99,15 @@ impl MessagingService {
         activity: &Activity,
         from_did: &DeviceId,
     ) -> Result<(), AppError> {
-        let is_sync_message = activity.as_base().actor() == activity.as_base().to();
-
-        let mut fanout = crate::devices::DeviceService::list_device_ids(
-            state,
-            &crate::activitypub::actor_uid(&activity.as_base().to())?,
-        )
-        .await?;
-
         match activity {
             Activity::Create(create) => {
+                let is_sync_message = activity.as_base().actor() == activity.as_base().to();
+
+                let mut fanout = crate::devices::DeviceService::list_device_ids(
+                    state,
+                    &crate::activitypub::actor_uid(&activity.as_base().to())?,
+                )
+                .await?;
                 let from_dids: HashSet<&String> =
                     create.object.content.iter().map(|e| &e.from).collect();
 
@@ -139,7 +138,7 @@ impl MessagingService {
                     return Err(AppError::BadRequest("device_list_mismatch".into()));
                 }
 
-                state.storage.inbox.insert_create(&create).await?;
+                state.storage.activities.insert_create(&create).await?;
 
                 join_all(create.object.content.iter().map(|entry| async move {
                     let activity_view = CreateView {
@@ -178,19 +177,27 @@ impl MessagingService {
                 if !Self::try_websocket_delivery(&state, activity, target_did).await {
                     state
                         .storage
-                        .inbox
+                        .activities
                         .insert_non_create(activity, &vec![target_did])
                         .await?;
                 }
             }
             Activity::Delivered(delivered) => {
+                let is_sync_message = activity.as_base().actor() == activity.as_base().to();
+
+                let fanout = crate::devices::DeviceService::list_device_ids(
+                    state,
+                    &crate::activitypub::actor_uid(&activity.as_base().to())?,
+                )
+                .await?;
+
                 let create_id = &delivered.object;
 
                 // Delete the delivery request for this Create and device
                 // Returns true if found and deleted, false if not found
                 let was_deleted = state
                     .storage
-                    .inbox
+                    .activities
                     .delete_delivery(create_id, from_did)
                     .await?;
 
@@ -207,7 +214,11 @@ impl MessagingService {
 
                 // Check if this is the first delivery for this message
                 // The server still tracks all deliveries, but only notifies the sender once
-                let is_first_delivery = state.storage.inbox.is_first_delivery(create_id).await?;
+                let is_first_delivery = state
+                    .storage
+                    .activities
+                    .claim_first_delivery(create_id)
+                    .await?;
 
                 // don't sync deliveries to yourself and don't send duplicates for the same message
                 if !is_sync_message && is_first_delivery {
@@ -226,7 +237,7 @@ impl MessagingService {
                     if !failed_dids.is_empty() {
                         state
                             .storage
-                            .inbox
+                            .activities
                             .insert_non_create(activity, &failed_dids)
                             .await?;
                     }

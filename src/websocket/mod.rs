@@ -1,6 +1,4 @@
-use crate::{
-    AppState, activitypub::types::actor_url, auth::Claims, devices::DeviceId, errors::AppError,
-};
+use crate::{AppState, auth::Claims, devices::DeviceId, errors::AppError};
 use axum::{
     Extension,
     extract::{
@@ -35,13 +33,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
     state.sockets.insert(claims.did, tx.clone());
 
     // Send messages from inbox to client
-    let actor_id = actor_url(&state.domain, &claims.sub);
-    match state
-        .storage
-        .inbox
-        .inbox_activities(&actor_id, claims.did)
-        .await
-    {
+    match state.storage.activities.inbox_activities(claims.did).await {
         Ok(inbox_items) => {
             for item in inbox_items {
                 if let Ok(message_json) = serde_json::to_string(&item) {

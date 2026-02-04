@@ -27,11 +27,7 @@ pub async fn get_inbox(
 
     // TODO check to see if the actor url is NOT local
     info!("GET FOR {}, {}", actor_id, did);
-    let items = state
-        .storage
-        .inbox
-        .inbox_activities(&actor_id.clone(), did)
-        .await?;
+    let items = state.storage.activities.inbox_activities(did).await?;
 
     info!("returned {} items to {}", items.len(), uid);
 

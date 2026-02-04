@@ -2,20 +2,16 @@ use crate::{
     activitypub::{Activity, Create, types::eko_types::DeviceAction},
     devices::DeviceId,
     errors::AppError,
-    storage::models::{RegisterDeviceResult, RotatedRefreshToken, StoredOutboxActivity},
+    storage::models::{RegisterDeviceResult, RotatedRefreshToken},
 };
 /// Defines the interface to store and get information
 use async_trait::async_trait;
 use uuid::Uuid;
 
 #[async_trait]
-pub trait InboxStore: Send + Sync {
+pub trait ActivityStore: Send + Sync {
     /// Returns all of the activities in an actors inbox for a specific device.
-    async fn inbox_activities(
-        &self,
-        inbox_actor_id: &str,
-        did: DeviceId,
-    ) -> Result<Vec<Activity>, AppError>;
+    async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
 
     /// Stores an Activity. If the activity is a deliver it will have a side affect of removing
     /// related creates
@@ -36,16 +32,11 @@ pub trait InboxStore: Send + Sync {
 
     /// Checks if this is the first delivery for a given Create activity.
     /// Returns true if no deliveries have been deleted yet (meaning this is the first one).
-    async fn is_first_delivery(&self, create_id: &str) -> Result<bool, AppError>;
+    async fn claim_first_delivery(&self, create_id: &str) -> Result<bool, AppError>;
 }
 
 #[async_trait]
-pub trait OutboxStore: Send + Sync {
-    async fn insert_activity(
-        &self,
-        activity: &StoredOutboxActivity,
-    ) -> Result<(), crate::errors::AppError>;
-}
+pub trait OutboxStore: Send + Sync {}
 
 #[async_trait]
 pub trait DeviceStore: Send + Sync {

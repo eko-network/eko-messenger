@@ -288,6 +288,7 @@ impl TestUser {
             context: json!("https://www.w3.org/ns/activitystreams"),
             id: None,
             actor: self.actor_id.clone(),
+            to: envelope.to.first().unwrap().clone(),
             object: envelope,
         })
     }

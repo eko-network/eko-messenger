@@ -5,7 +5,7 @@ CREATE TABLE actors (
   outbox_url TEXT NOT NULL
 );
 
-CREATE TYPE type AS ENUM(
+CREATE TYPE activity_type AS ENUM(
   'Create',
   'Delivered',
   'Reject',
@@ -15,10 +15,10 @@ CREATE TYPE type AS ENUM(
 
 CREATE TABLE inbox_activities (
   id TEXT PRIMARY KEY,
-  type type NOT NULL,
-  inbox_actor_id TEXT NOT NULL REFERENCES actors (id) ON DELETE CASCADE,
+  type activity_type NOT NULL,
   activity_json JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  first_delivery_at TIMESTAMPTZ
 );
 
 CREATE TABLE message_entries (
