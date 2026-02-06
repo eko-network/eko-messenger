@@ -13,17 +13,17 @@ pub trait IdentityProvider: Send + Sync {
 #[cfg(feature = "auth-firebase")]
 pub mod firebase;
 #[cfg(feature = "auth-firebase")]
-pub use firebase::FirebaseAuth;
+pub use firebase::Firebase;
 
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
 #[cfg(feature = "auth-oidc")]
-pub use oidc::OidcProvider;
+pub use oidc::Oidc;
 
 pub mod types;
 pub use types::{
     LoginRequest, LoginResponse, LogoutRequest, PreKey, RefreshRequest, RefreshResponse,
-    SignedPreKey, SignupRequest,
+    SignedPreKey,
 };
 
 pub use jwt::{Claims, JwtHelper};

@@ -18,7 +18,7 @@ use axum::{Json, Router, extract::State, routing::post};
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
 
-pub struct FirebaseAuth {
+pub struct Firebase {
     client: reqwest::Client,
     domain: Arc<String>,
     project_id: String,
@@ -62,7 +62,7 @@ async fn get_token(provider: &Arc<dyn TokenProvider>) -> Result<Arc<Token>, gcp_
         .await
 }
 
-impl FirebaseAuth {
+impl Firebase {
     pub async fn new_from_env(domain: Arc<String>, client: reqwest::Client) -> Result<Self> {
         let service_account_path = var("GOOGLE_APPLICATION_CREDENTIALS")
             .expect("GOOGLE_APPLICATION_CREDENTIALS should be set in enviroment");
@@ -210,7 +210,7 @@ impl FirebaseAuth {
 }
 
 #[async_trait]
-impl IdentityProvider for FirebaseAuth {
+impl IdentityProvider for Firebase {
     async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
         self.person_from_uid(uid).await
     }
@@ -221,10 +221,10 @@ impl IdentityProvider for FirebaseAuth {
 }
 
 pub fn firebase_routes() -> Router<AppState> {
-    Router::new().route("/auth/v1/login", post(login_handler))
+    Router::new().route("/auth/v1/login", post(firebase_login_handler))
 }
 
-pub async fn login_handler(
+pub async fn firebase_login_handler(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
     TypedHeader(user_agent): TypedHeader<UserAgent>,
