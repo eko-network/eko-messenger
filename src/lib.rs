@@ -50,11 +50,28 @@ use tracing_subscriber::EnvFilter;
 pub struct AppState {
     pub domain: Arc<String>,
     pub identity: Arc<dyn crate::auth::IdentityProvider>,
-    pub auth: crate::auth::AuthProvider,
+    pub auth: Option<crate::auth::AuthProvider>,
     pub sessions: Arc<crate::auth::SessionManager>,
     pub storage: Arc<Storage>,
     pub sockets: Arc<WebSocketService>,
     pub notification_service: Arc<NotificationService>,
+}
+
+impl AppState {
+    #[cfg(feature = "auth-firebase")]
+    pub fn firebase(&self) -> &Arc<Firebase> {
+        self.auth
+            .as_ref()
+            .expect("Firebase auth provider not configured")
+            .as_firebase()
+    }
+    #[cfg(feature = "auth-oidc")]
+    pub fn oidc(&self) -> &Arc<Oidc> {
+        self.auth
+            .as_ref()
+            .expect("OIDC auth provider not configured")
+            .as_oidc()
+    }
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -134,7 +151,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app_state = AppState {
         domain,
         identity,
-        auth,
+        auth: Some(auth),
         sessions,
         sockets: Arc::new(WebSocketService::new()),
         notification_service: Arc::new(notification_service),

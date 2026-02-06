@@ -1,6 +1,11 @@
 pub mod jwt;
 pub mod session;
 
+#[cfg(all(feature = "auth-firebase", feature = "auth-oidc"))]
+compile_error!("Cannot enable both 'auth-firebase' and 'auth-oidc' features");
+#[cfg(not(any(feature = "auth-firebase", feature = "auth-oidc")))]
+compile_error!("Must enable exactly one auth provider: 'auth-firebase' or 'auth-oidc'");
+
 use crate::{activitypub::Person, errors::AppError};
 use async_trait::async_trait;
 use std::sync::Arc;
