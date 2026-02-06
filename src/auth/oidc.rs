@@ -11,8 +11,9 @@ use crate::{
 };
 use async_trait::async_trait;
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State},
+    routing::{get, post},
 };
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
@@ -105,15 +106,13 @@ impl OidcConfig {
 pub struct OidcProvider {
     config: OidcConfig,
     http_client: reqwest::Client,
-    storage: Arc<Storage>,
+    pub storage: Arc<Storage>,
     domain: Arc<String>,
-    jwt_helper: JwtHelper,
     auth_states: Arc<DashMap<String, AuthState>>,
 }
 
 impl OidcProvider {
     pub async fn new_from_env(domain: Arc<String>, storage: Arc<Storage>) -> anyhow::Result<Self> {
-        let jwt_helper = JwtHelper::new_from_env()?;
         let http_client = reqwest::Client::new();
 
         let config = OidcConfig::from_env(&http_client).await?;
@@ -124,7 +123,6 @@ impl OidcProvider {
             http_client,
             storage,
             domain,
-            jwt_helper,
             auth_states: Arc::new(DashMap::new()),
         })
     }
@@ -473,9 +471,8 @@ impl IdentityProvider for OidcIdentityProvider {
         ))
     }
 
-    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+    pub async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
         let user = self
-            .provider
             .storage
             .users
             .get_user_by_username(username)
@@ -483,6 +480,17 @@ impl IdentityProvider for OidcIdentityProvider {
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
         Ok(user.uid)
+    }
+}
+
+#[async_trait]
+impl IdentityProvider for OidcProvider {
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
+        self.person_from_uid(uid).await
+    }
+
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+        self.uid_from_username(username).await
     }
 }
 
@@ -520,15 +528,17 @@ pub struct OidcCompleteRequest {
     pub signed_pre_key: SignedPreKey,
 }
 
+pub fn oidc_routes() -> Router<AppState> {
+    Router::new()
+        .route("/auth/v1/oidc/login", get(oidc_login_handler))
+        .route("/auth/v1/oidc/callback", get(oidc_callback_handler))
+        .route("/auth/v1/oidc/complete", post(oidc_complete_handler))
+}
+
 pub async fn oidc_login_handler(
     State(state): State<AppState>,
 ) -> Result<Json<OidcLoginResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
-
-    let (login_url, csrf_token, _nonce) = oidc.start_auth()?;
+    let (login_url, csrf_token, _nonce) = state.oidc.start_auth()?;
 
     Ok(Json(OidcLoginResponse {
         login_url,
@@ -540,11 +550,6 @@ pub async fn oidc_callback_handler(
     State(state): State<AppState>,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Json<OidcCallbackResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
-
     // Verify CSRF token is provided
     if query.state.is_empty() {
         return Err(AppError::Unauthorized(
@@ -553,11 +558,11 @@ pub async fn oidc_callback_handler(
     }
 
     // Exchange code and verify CSRF token + nonce + ID token signature
-    let (email, sub) = oidc.exchange_code(&query.code, &query.state).await?;
+    let (email, sub) = state.oidc.exchange_code(&query.code, &query.state).await?;
 
-    let (uid, _username) = oidc.get_or_create_user(&email, &sub).await?;
+    let (uid, _username) = state.oidc.get_or_create_user(&email, &sub).await?;
 
-    let verification_token = oidc.create_verification_token(&email, &uid)?;
+    let verification_token = state.oidc.create_verification_token(&email, &uid)?;
 
     Ok(Json(OidcCallbackResponse {
         verification_token,
@@ -572,10 +577,9 @@ pub async fn oidc_complete_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<OidcCompleteRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
+    let (_provider, _email, uid) = state
+        .oidc
+        .verify_verification_token(&req.verification_token)?;
 
     let registration = DeviceRegistration {
         device_name: req.device_name,
