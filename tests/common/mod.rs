@@ -264,3 +264,159 @@ async fn postgres_pool() -> PgPool {
 
     pool
 }
+
+/// Spawn app with Firebase auth provider (for Firebase integration tests)
+#[cfg(feature = "auth-firebase")]
+pub async fn spawn_app_with_firebase() -> TestApp {
+    use eko_messenger::auth::{AuthProvider, firebase::Firebase};
+
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .try_init()
+        .unwrap_or_else(|_| {});
+
+    if env::var("JWT_SECRET").is_err() {
+        unsafe {
+            env::set_var("JWT_SECRET", "test-jwt-secret-do-not-use-in-prod");
+        }
+    }
+
+    // Ensure Firebase env vars are set
+    env::var("GOOGLE_APPLICATION_CREDENTIALS")
+        .expect("GOOGLE_APPLICATION_CREDENTIALS required for Firebase tests");
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind random port");
+    let port = listener.local_addr().unwrap().port();
+    let address = format!("http://127.0.0.1:{}", port);
+    let domain = Arc::new(format!("http://127.0.0.1:{}", port));
+
+    let storage = Arc::new(postgres_storage(domain.clone(), postgres_pool().await));
+    let client = reqwest::Client::new();
+
+    // Create Firebase provider from env
+    let firebase = Arc::new(
+        Firebase::new_from_env(domain.clone(), client.clone())
+            .await
+            .expect("Failed to create Firebase provider"),
+    );
+
+    let sessions = Arc::new(
+        SessionManager::new(domain.clone(), storage.clone())
+            .expect("Failed to create SessionManager"),
+    );
+
+    let notification_service = NotificationService::new(storage.clone())
+        .await
+        .expect("Failed to create notification_service");
+
+    let app_state = AppState {
+        domain: domain.clone(),
+        identity: firebase.clone() as Arc<dyn IdentityProvider>,
+        auth: Some(AuthProvider::Firebase(firebase.clone())),
+        sessions: sessions.clone(),
+        storage: storage.clone(),
+        sockets: Arc::new(WebSocketService::new()),
+        notification_service: Arc::new(notification_service),
+    };
+
+    // Use production app function - will include firebase_routes()
+    let app_router = app(app_state, "ConnectInfo".to_string()).expect("Failed to build app router");
+
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app_router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+
+    TestApp {
+        address,
+        domain,
+        storage,
+        sessions,
+        client: Client::new(),
+    }
+}
+
+/// Spawn app with OIDC auth provider (for OIDC integration tests)
+#[cfg(feature = "auth-oidc")]
+pub async fn spawn_app_with_oidc() -> TestApp {
+    use eko_messenger::auth::{AuthProvider, oidc::Oidc};
+
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .try_init()
+        .unwrap_or_else(|_| {});
+
+    if env::var("JWT_SECRET").is_err() {
+        unsafe {
+            env::set_var("JWT_SECRET", "test-jwt-secret-do-not-use-in-prod");
+        }
+    }
+
+    // Ensure OIDC env vars are set
+    env::var("OIDC_ISSUER").expect("OIDC_ISSUER required for OIDC tests");
+    env::var("OIDC_CLIENT_ID").expect("OIDC_CLIENT_ID required for OIDC tests");
+    env::var("OIDC_CLIENT_SECRET").expect("OIDC_CLIENT_SECRET required for OIDC tests");
+    env::var("OIDC_REDIRECT_URL").expect("OIDC_REDIRECT_URL required for OIDC tests");
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind random port");
+    let port = listener.local_addr().unwrap().port();
+    let address = format!("http://127.0.0.1:{}", port);
+    let domain = Arc::new(format!("http://127.0.0.1:{}", port));
+
+    let storage = Arc::new(postgres_storage(domain.clone(), postgres_pool().await));
+    let client = reqwest::Client::new();
+
+    // Create OIDC provider from env
+    let oidc = Arc::new(
+        Oidc::new_from_env(domain.clone(), storage.clone(), client.clone())
+            .await
+            .expect("Failed to create OIDC provider"),
+    );
+
+    let sessions = Arc::new(
+        SessionManager::new(domain.clone(), storage.clone())
+            .expect("Failed to create SessionManager"),
+    );
+
+    let notification_service = NotificationService::new(storage.clone())
+        .await
+        .expect("Failed to create notification_service");
+
+    let app_state = AppState {
+        domain: domain.clone(),
+        identity: oidc.clone() as Arc<dyn IdentityProvider>,
+        auth: Some(AuthProvider::Oidc(oidc.clone())),
+        sessions: sessions.clone(),
+        storage: storage.clone(),
+        sockets: Arc::new(WebSocketService::new()),
+        notification_service: Arc::new(notification_service),
+    };
+
+    // Use production app function - will include oidc_routes()
+    let app_router = app(app_state, "ConnectInfo".to_string()).expect("Failed to build app router");
+
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app_router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+
+    TestApp {
+        address,
+        domain,
+        storage,
+        sessions,
+        client: Client::new(),
+    }
+}

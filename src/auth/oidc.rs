@@ -496,7 +496,7 @@ impl IdentityProvider for Oidc {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcLoginResponse {
     pub login_url: String,
@@ -509,7 +509,7 @@ pub struct OidcCallbackQuery {
     pub state: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcCallbackResponse {
     pub verification_token: String,
@@ -518,7 +518,7 @@ pub struct OidcCallbackResponse {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcCompleteRequest {
     pub verification_token: String,
