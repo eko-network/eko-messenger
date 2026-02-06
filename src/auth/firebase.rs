@@ -230,10 +230,8 @@ pub async fn firebase_login_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<crate::auth::LoginRequest>,
 ) -> Result<Json<crate::auth::LoginResponse>, AppError> {
-    let (actor, uid) = state
-        .firebase
-        .login_with_email(req.email, req.password)
-        .await?;
+    let firebase = state.auth.as_firebase();
+    let (actor, uid) = firebase.login_with_email(req.email, req.password).await?;
 
     state
         .sessions

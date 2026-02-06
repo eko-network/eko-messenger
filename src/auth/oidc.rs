@@ -540,7 +540,8 @@ pub fn oidc_routes() -> Router<AppState> {
 pub async fn oidc_login_handler(
     State(state): State<AppState>,
 ) -> Result<Json<OidcLoginResponse>, AppError> {
-    let (login_url, csrf_token, _nonce) = state.oidc.start_auth()?;
+    let oidc = state.auth.as_oidc();
+    let (login_url, csrf_token, _nonce) = oidc.start_auth()?;
 
     Ok(Json(OidcLoginResponse {
         login_url,
@@ -559,12 +560,14 @@ pub async fn oidc_callback_handler(
         ));
     }
 
+    let oidc = state.auth.as_oidc();
+
     // Exchange code and verify CSRF token + nonce + ID token signature
-    let (email, sub) = state.oidc.exchange_code(&query.code, &query.state).await?;
+    let (email, sub) = oidc.exchange_code(&query.code, &query.state).await?;
 
-    let (uid, _username) = state.oidc.get_or_create_user(&email, &sub).await?;
+    let (uid, _username) = oidc.get_or_create_user(&email, &sub).await?;
 
-    let verification_token = state.oidc.create_verification_token(&email, &uid)?;
+    let verification_token = oidc.create_verification_token(&email, &uid)?;
 
     Ok(Json(OidcCallbackResponse {
         verification_token,
@@ -579,9 +582,7 @@ pub async fn oidc_complete_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<OidcCompleteRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
-    let (_provider, _email, uid) = state
-        .oidc
-        .verify_verification_token(&req.verification_token)?;
+    let oidc = state.auth.as_oidc();
 
     let registration = DeviceRegistration {
         device_name: req.device_name,
