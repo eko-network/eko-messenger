@@ -11,7 +11,7 @@ use tokio::fs;
 use crate::{
     AppState,
     activitypub::{Person, create_person},
-    auth::IdentityProvider,
+    auth::{IdentityProvider, LoginRequest, LoginResponse},
     errors::AppError,
 };
 use axum::{Json, Router, extract::State, routing::post};
