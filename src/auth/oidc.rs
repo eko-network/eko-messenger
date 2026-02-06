@@ -98,24 +98,26 @@ impl OidcConfig {
     }
 }
 
-pub struct OidcProvider {
+pub struct Oidc {
     config: OidcConfig,
-    http_client: reqwest::Client,
+    client: reqwest::Client,
     pub storage: Arc<Storage>,
     domain: Arc<String>,
     auth_states: Arc<DashMap<String, AuthState>>,
 }
 
-impl OidcProvider {
-    pub async fn new_from_env(domain: Arc<String>, storage: Arc<Storage>) -> anyhow::Result<Self> {
-        let http_client = reqwest::Client::new();
-
-        let config = OidcConfig::from_env(&http_client).await?;
+impl Oidc {
+    pub async fn new_from_env(
+        domain: Arc<String>,
+        storage: Arc<Storage>,
+        client: reqwest::Client,
+    ) -> anyhow::Result<Self> {
+        let config = OidcConfig::from_env(&client).await?;
         info!("Configured OIDC provider: {}", config.issuer_url);
 
         Ok(Self {
             config,
-            http_client,
+            client,
             storage,
             domain,
             auth_states: Arc::new(DashMap::new()),
@@ -210,7 +212,7 @@ impl OidcProvider {
                 error!("Failed to prepare token exchange: {:?}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to prepare token exchange: {}", e))
             })?
-            .request_async(&self.http_client)
+            .request_async(&self.client)
             .await
             .map_err(|e| {
                 error!("Token exchange failed: {:?}", e);
@@ -391,7 +393,7 @@ impl OidcProvider {
 }
 
 #[async_trait]
-impl IdentityProvider for OidcProvider {
+impl IdentityProvider for Oidc {
     async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
         self.person_from_uid(uid).await
     }

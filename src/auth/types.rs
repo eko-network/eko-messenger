@@ -39,14 +39,6 @@ pub struct LoginRequest {
     pub signed_pre_key: SignedPreKey,
 }
 
-#[derive(Deserialize, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignupRequest {
-    pub email: String,
-    pub password: String,
-    pub username: String,
-}
-
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {

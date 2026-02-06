@@ -26,10 +26,10 @@ use crate::{
 };
 
 #[cfg(feature = "auth-firebase")]
-use crate::auth::firebase::{FirebaseAuth, firebase_routes};
+use crate::auth::firebase::{Firebase, firebase_routes};
 
 #[cfg(feature = "auth-oidc")]
-use crate::auth::oidc::{OidcProvider, oidc_routes};
+use crate::auth::oidc::{Oidc, oidc_routes};
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
@@ -51,7 +51,7 @@ use tracing_subscriber::EnvFilter;
 pub struct AppState {
     pub domain: Arc<String>,
     pub identity: Arc<dyn crate::auth::IdentityProvider>,
-    pub firebase: Arc<crate::auth::firebase::FirebaseAuth>,
+    pub firebase: Arc<Firebase>,
     pub sessions: Arc<crate::auth::SessionManager>,
     pub storage: Arc<Storage>,
     pub sockets: Arc<WebSocketService>,
@@ -63,7 +63,7 @@ pub struct AppState {
 pub struct AppState {
     pub domain: Arc<String>,
     pub identity: Arc<dyn crate::auth::IdentityProvider>,
-    pub oidc: Arc<crate::auth::oidc::OidcProvider>,
+    pub oidc: Arc<Oidc>,
     pub sessions: Arc<crate::auth::SessionManager>,
     pub storage: Arc<Storage>,
     pub sockets: Arc<WebSocketService>,
@@ -131,10 +131,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
     #[cfg(feature = "auth-firebase")]
-    let firebase = Arc::new(FirebaseAuth::new_from_env(domain.clone(), client.clone()).await?);
+    let firebase = Arc::new(Firebase::new_from_env(domain.clone(), client.clone()).await?);
 
     #[cfg(feature = "auth-oidc")]
-    let oidc = Arc::new(OidcProvider::new_from_env(domain.clone(), storage.clone()).await?);
+    let oidc = Arc::new(Oidc::new_from_env(domain.clone(), storage.clone(), client.clone()).await?);
 
     let notification_service = NotificationService::new(storage.clone()).await?;
 
