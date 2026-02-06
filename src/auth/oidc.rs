@@ -342,7 +342,7 @@ impl Oidc {
         &self,
         token: &str,
     ) -> Result<(String, String, String), AppError> {
-        use jsonwebtoken::{DecodingKey, Validation, decode};
+        use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
         #[derive(Deserialize)]
         struct VerificationClaims {
@@ -353,10 +353,12 @@ impl Oidc {
 
         let secret = env::var("JWT_SECRET")
             .map_err(|_| AppError::InternalError(anyhow::anyhow!("JWT_SECRET not set")))?;
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.validate_exp = true;
         let token_data = decode::<VerificationClaims>(
             token,
             &DecodingKey::from_secret(secret.as_bytes()),
-            &Validation::default(),
+            &validation,
         )
         .map_err(|e| AppError::Unauthorized(format!("Invalid verification token: {}", e)))?;
 
