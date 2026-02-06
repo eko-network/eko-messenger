@@ -16,7 +16,7 @@ use crate::{
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
         post_to_outbox, webfinger_handler,
     },
-    auth::SessionManager,
+    auth::{SessionManager, session::logout_handler},
     config::storage_config,
     devices::get_approval_status_handler,
     groups::{
@@ -76,6 +76,7 @@ pub struct AppState {
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
     let protected_routes = Router::new()
+        .route("/auth/v1/logout", post(logout_handler))
         .route(&format!("{}/register", NOTIF_URL), post(register_handler))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))

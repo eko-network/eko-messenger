@@ -2,13 +2,13 @@ use crate::{
     AppState,
     activitypub::{Person, actor_url},
     auth::{
-        LoginResponse, PreKey, RefreshRequest, RefreshResponse, SignedPreKey,
+        LoginResponse, LogoutRequest, PreKey, RefreshRequest, RefreshResponse, SignedPreKey,
         jwt::{Claims, JwtHelper},
     },
     errors::AppError,
     storage::Storage,
 };
-use axum::{Json, extract::State};
+use axum::{Json, extract::State, http::StatusCode};
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
 use std::sync::Arc;
@@ -151,4 +151,12 @@ pub async fn refresh_handler(
         .sessions
         .refresh_token(&req.refresh_token, &ip.to_string(), &user_agent.to_string())
         .await
+}
+
+pub async fn logout_handler(
+    State(state): State<AppState>,
+    Json(req): Json<LogoutRequest>,
+) -> Result<StatusCode, AppError> {
+    state.sessions.logout(&req.refresh_token).await?;
+    Ok(StatusCode::OK)
 }
