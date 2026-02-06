@@ -31,16 +31,52 @@ pub struct TestUser {
 }
 
 impl TestUser {
-    /// Creates a new test user via signup and login endpoints
-    /// Creating a TestUser also automatically creates that uers first device
+    /// Creates a new test user via storage + SessionManager
+    /// Creating a TestUser also automatically creates that user's first device
     pub async fn create(app: &TestApp, username: &str) -> Self {
         let email = format!("{}@example.com", username);
-        let password = "password";
+        let password = "password"; // Not used, kept for consistency
 
-        app.signup_http(&username, &email, password).await;
+        // Create user directly via storage (no HTTP)
+        let uid = app.create_test_user(username, &email).await;
 
-        // Login to get credentials (and the first device)
-        let login_response = app.login_http(&email, password).await;
+        // Create actor
+        let actor = eko_messenger::activitypub::create_person(
+            &app.domain,
+            &uid,
+            None,                 // summary
+            username.to_string(), // preferred_username
+            None,                 // name
+            None,                 // profile_picture
+        );
+
+        // Complete login directly via SessionManager (creates first device)
+        let login_response = app
+            .sessions
+            .complete_login(
+                &uid,
+                actor,
+                "default",
+                &vec![1, 2, 3], // test identity key
+                123,            // test registration_id
+                &vec![eko_messenger::auth::PreKey {
+                    id: 1,
+                    key: vec![4, 5, 6],
+                }],
+                &eko_messenger::auth::SignedPreKey {
+                    id: 1,
+                    key: vec![7, 8, 9],
+                    signature: vec![10, 11, 12],
+                },
+                "127.0.0.1",
+                "test-agent",
+            )
+            .await
+            .expect("Login failed");
+
+        // Unwrap Json wrapper
+        let login_response = login_response.0;
+
         let did = DeviceId::from_url(&login_response.did)
             .expect("Failed to parse device ID from login response");
 
@@ -66,31 +102,45 @@ impl TestUser {
         self.devices.len()
     }
 
-    /// Add a device by logging in with new device credentials
-    /// Each login creates a new device with keys
+    /// Add a device by calling SessionManager directly
+    /// Each device registration creates a new device with keys
     pub async fn add_device(&mut self, app: &TestApp, device_name: &str) -> &TestDevice {
-        let login_req = app.generate_login_request(
-            self.email.clone(),
-            self.password.clone(),
-            Some(device_name),
+        // Create actor
+        let actor = eko_messenger::activitypub::create_person(
+            &app.domain,
+            &self.uid,
+            None,                  // summary
+            self.username.clone(), // preferred_username
+            None,                  // name
+            None,                  // profile_picture
         );
 
-        let login_url = format!("{}/auth/v1/login", &app.address);
-        let login_res = app
-            .client
-            .post(&login_url)
-            .header("User-Agent", "test-client")
-            .json(&login_req)
-            .send()
+        // Register new device directly via SessionManager
+        let login_response = app
+            .sessions
+            .complete_login(
+                &self.uid,
+                actor,
+                device_name,
+                &vec![1, 2, 3], // test identity key
+                123,            // test registration_id
+                &vec![eko_messenger::auth::PreKey {
+                    id: 1,
+                    key: vec![4, 5, 6],
+                }],
+                &eko_messenger::auth::SignedPreKey {
+                    id: 1,
+                    key: vec![7, 8, 9],
+                    signature: vec![10, 11, 12],
+                },
+                "127.0.0.1",
+                "test-agent",
+            )
             .await
-            .expect("Failed to add device via login");
+            .expect("Failed to add device");
 
-        let login_res = assert_success(login_res).await;
-
-        let login_response: crate::common::LoginResponse = login_res
-            .json()
-            .await
-            .expect("Failed to parse login response");
+        // Unwrap Json wrapper
+        let login_response = login_response.0;
 
         let new_did = DeviceId::from_url(&login_response.did)
             .expect("Failed to parse device ID from login response");

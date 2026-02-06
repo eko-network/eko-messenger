@@ -16,10 +16,7 @@ use crate::{
         handlers::capabilities::{NOTIF_URL, SOCKET_URL},
         post_to_outbox, webfinger_handler,
     },
-    auth::{
-        Auth, OidcProviderState, add_oidc_routes, build_auth, login_handler, logout_handler,
-        refresh_token_handler, signup_handler,
-    },
+    auth::{SessionManager, session::logout_handler},
     config::storage_config,
     devices::get_approval_status_handler,
     middleware::auth_middleware,
@@ -27,6 +24,12 @@ use crate::{
     storage::Storage,
     websocket::{WebSocketService, handler::ws_handler},
 };
+
+#[cfg(feature = "auth-firebase")]
+use crate::auth::firebase::{Firebase, firebase_routes};
+#[cfg(feature = "auth-oidc")]
+use crate::auth::oidc::{Oidc, oidc_routes};
+
 use axum::middleware::from_fn_with_state;
 use axum::{
     Router,
@@ -46,11 +49,29 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 pub struct AppState {
     pub domain: Arc<String>,
-    pub auth: Arc<Auth>,
+    pub identity: Arc<dyn crate::auth::IdentityProvider>,
+    pub auth: Option<crate::auth::AuthProvider>,
+    pub sessions: Arc<crate::auth::SessionManager>,
     pub storage: Arc<Storage>,
     pub sockets: Arc<WebSocketService>,
     pub notification_service: Arc<NotificationService>,
-    pub oidc_provider: OidcProviderState,
+}
+
+impl AppState {
+    #[cfg(feature = "auth-firebase")]
+    pub fn firebase(&self) -> &Arc<Firebase> {
+        self.auth
+            .as_ref()
+            .expect("Firebase auth provider not configured")
+            .as_firebase()
+    }
+    #[cfg(feature = "auth-oidc")]
+    pub fn oidc(&self) -> &Arc<Oidc> {
+        self.auth
+            .as_ref()
+            .expect("OIDC auth provider not configured")
+            .as_oidc()
+    }
 }
 
 pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router> {
@@ -70,15 +91,22 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
 
-    let router = Router::new()
+    let base_router = Router::new()
         .route("/", get(root_handler))
-        .route("/auth/v1/login", post(login_handler))
-        .route("/auth/v1/signup", post(signup_handler))
-        .route("/auth/v1/refresh", post(refresh_token_handler))
         .route("/.well-known/webfinger", get(webfinger_handler))
         .route("/users/{uid}", get(actor_handler))
-        .route("/.well-known/ecp", get(capabilities_handler));
-    let router = add_oidc_routes(router);
+        .route("/.well-known/ecp", get(capabilities_handler))
+        .route(
+            "/auth/v1/refresh",
+            post(crate::auth::session::refresh_handler),
+        );
+
+    let router = base_router;
+
+    #[cfg(feature = "auth-firebase")]
+    let router = router.merge(firebase_routes());
+    #[cfg(feature = "auth-oidc")]
+    let router = router.merge(oidc_routes());
 
     Ok(router
         .merge(protected_routes)
@@ -92,7 +120,6 @@ fn port_from_env() -> u16 {
         .unwrap_or(3000)
 }
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    // logging
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
@@ -100,18 +127,35 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let port = port_from_env();
     let domain = Arc::new(var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{}", port)));
     let storage = Arc::new(storage_config(domain.clone()).await?);
+    let sessions = Arc::new(SessionManager::new(domain.clone(), storage.clone())?);
+    let client = reqwest::Client::new();
 
-    let (auth, oidc_provider) = build_auth(domain.clone(), storage.clone()).await?;
+    #[cfg(feature = "auth-firebase")]
+    let auth = crate::auth::AuthProvider::Firebase(Arc::new(
+        Firebase::new_from_env(domain.clone(), client.clone()).await?,
+    ));
+    #[cfg(feature = "auth-oidc")]
+    let auth = crate::auth::AuthProvider::Oidc(Arc::new(
+        Oidc::new_from_env(domain.clone(), storage.clone(), client.clone()).await?,
+    ));
+
+    let identity: Arc<dyn crate::auth::IdentityProvider> = match &auth {
+        #[cfg(feature = "auth-firebase")]
+        crate::auth::AuthProvider::Firebase(fb) => fb.clone(),
+        #[cfg(feature = "auth-oidc")]
+        crate::auth::AuthProvider::Oidc(oidc) => oidc.clone(),
+    };
 
     let notification_service = NotificationService::new(storage.clone()).await?;
 
     let app_state = AppState {
         domain,
-        auth: Arc::new(auth),
+        identity,
+        auth: Some(auth),
+        sessions,
         sockets: Arc::new(WebSocketService::new()),
         notification_service: Arc::new(notification_service),
         storage,
-        oidc_provider,
     };
 
     let app = app(app_state, ip_source)?;

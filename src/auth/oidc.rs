@@ -1,18 +1,15 @@
 use crate::{
     AppState,
-    activitypub::{Person, actor_url, create_person},
-    auth::{
-        IdentityProvider, LoginResponse, PreKey, SignedPreKey,
-        handlers::{JWT_LIFESPAN, REFRESH_EXPIRATION},
-        jwt::JwtHelper,
-    },
+    activitypub::{Person, create_person},
+    auth::{IdentityProvider, LoginResponse, PreKey, SignedPreKey},
     errors::AppError,
     storage::Storage,
 };
 use async_trait::async_trait;
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State},
+    routing::{get, post},
 };
 use axum_client_ip::ClientIp;
 use axum_extra::{TypedHeader, headers::UserAgent};
@@ -101,29 +98,28 @@ impl OidcConfig {
     }
 }
 
-pub struct OidcProvider {
+pub struct Oidc {
     config: OidcConfig,
-    http_client: reqwest::Client,
-    storage: Arc<Storage>,
+    client: reqwest::Client,
+    pub storage: Arc<Storage>,
     domain: Arc<String>,
-    jwt_helper: JwtHelper,
     auth_states: Arc<DashMap<String, AuthState>>,
 }
 
-impl OidcProvider {
-    pub async fn new_from_env(domain: Arc<String>, storage: Arc<Storage>) -> anyhow::Result<Self> {
-        let jwt_helper = JwtHelper::new_from_env()?;
-        let http_client = reqwest::Client::new();
-
-        let config = OidcConfig::from_env(&http_client).await?;
+impl Oidc {
+    pub async fn new_from_env(
+        domain: Arc<String>,
+        storage: Arc<Storage>,
+        client: reqwest::Client,
+    ) -> anyhow::Result<Self> {
+        let config = OidcConfig::from_env(&client).await?;
         info!("Configured OIDC provider: {}", config.issuer_url);
 
         Ok(Self {
             config,
-            http_client,
+            client,
             storage,
             domain,
-            jwt_helper,
             auth_states: Arc::new(DashMap::new()),
         })
     }
@@ -216,7 +212,7 @@ impl OidcProvider {
                 error!("Failed to prepare token exchange: {:?}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to prepare token exchange: {}", e))
             })?
-            .request_async(&self.http_client)
+            .request_async(&self.client)
             .await
             .map_err(|e| {
                 error!("Token exchange failed: {:?}", e);
@@ -341,7 +337,7 @@ impl OidcProvider {
         &self,
         token: &str,
     ) -> Result<(String, String, String), AppError> {
-        use jsonwebtoken::{DecodingKey, Validation, decode};
+        use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
         #[derive(Deserialize)]
         struct VerificationClaims {
@@ -352,10 +348,12 @@ impl OidcProvider {
 
         let secret = env::var("JWT_SECRET")
             .map_err(|_| AppError::InternalError(anyhow::anyhow!("JWT_SECRET not set")))?;
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.validate_exp = true;
         let token_data = decode::<VerificationClaims>(
             token,
             &DecodingKey::from_secret(secret.as_bytes()),
-            &Validation::default(),
+            &validation,
         )
         .map_err(|e| AppError::Unauthorized(format!("Invalid verification token: {}", e)))?;
 
@@ -366,111 +364,8 @@ impl OidcProvider {
         ))
     }
 
-    pub async fn complete_login(
-        &self,
-        verification_token: &str,
-        device_name: &str,
-        identity_key: &[u8],
-        registration_id: i32,
-        pre_keys: &[PreKey],
-        signed_pre_key: &SignedPreKey,
-        ip_address: &str,
-        user_agent: &str,
-    ) -> Result<LoginResponse, AppError> {
-        let (_provider, _email, uid) = self.verify_verification_token(verification_token)?;
-
-        // Get user info
+    pub async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
         let user = self
-            .storage
-            .users
-            .get_user_by_uid(&uid)
-            .await?
-            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
-
-        let expires_at =
-            time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
-
-        // Register device
-        let register = self
-            .storage
-            .devices
-            .register_device(
-                &uid,
-                device_name,
-                identity_key,
-                registration_id,
-                pre_keys,
-                signed_pre_key,
-                ip_address,
-                user_agent,
-                expires_at,
-            )
-            .await?;
-
-        // Upsert local actor
-        let actor_id = actor_url(&self.domain, &uid);
-        let inbox_url = format!("{}/inbox", actor_id);
-        let outbox_url = format!("{}/outbox", actor_id);
-        self.storage
-            .actors
-            .upsert_local_actor(&actor_id, &inbox_url, &outbox_url)
-            .await?;
-
-        // Create access token
-        let access_token = self
-            .jwt_helper
-            .create_jwt(&uid, register.did)
-            .map_err(|e| AppError::InternalError(anyhow::anyhow!(e)))?;
-
-        let expires_at = time::OffsetDateTime::now_utc() + JWT_LIFESPAN;
-
-        // Create actor
-        let actor = create_person(
-            &self.domain,
-            &user.uid,
-            None,
-            user.username.clone(),
-            None,
-            None,
-        );
-
-        Ok(LoginResponse {
-            uid: uid.clone(),
-            did: register.did.to_url(&self.domain),
-            access_token,
-            refresh_token: register.refresh_token,
-            expires_at: expires_at.format(&time::format_description::well_known::Rfc3339)?,
-            actor,
-        })
-    }
-}
-
-pub struct OidcIdentityProvider {
-    provider: Arc<OidcProvider>,
-    domain: Arc<String>,
-}
-
-impl OidcIdentityProvider {
-    pub fn new(domain: Arc<String>, provider: Arc<OidcProvider>) -> Self {
-        Self { provider, domain }
-    }
-}
-
-#[async_trait]
-impl IdentityProvider for OidcIdentityProvider {
-    async fn login_with_email(
-        &self,
-        _email: String,
-        _password: String,
-    ) -> Result<(Person, String), AppError> {
-        Err(AppError::BadRequest(
-            "OIDC authentication requires using the /auth/v1/oidc/login endpoint".to_string(),
-        ))
-    }
-
-    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
-        let user = self
-            .provider
             .storage
             .users
             .get_user_by_uid(uid)
@@ -487,9 +382,8 @@ impl IdentityProvider for OidcIdentityProvider {
         ))
     }
 
-    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+    pub async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
         let user = self
-            .provider
             .storage
             .users
             .get_user_by_username(username)
@@ -500,7 +394,18 @@ impl IdentityProvider for OidcIdentityProvider {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[async_trait]
+impl IdentityProvider for Oidc {
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
+        self.person_from_uid(uid).await
+    }
+
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+        self.uid_from_username(username).await
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcLoginResponse {
     pub login_url: String,
@@ -513,7 +418,7 @@ pub struct OidcCallbackQuery {
     pub state: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcCallbackResponse {
     pub verification_token: String,
@@ -522,7 +427,7 @@ pub struct OidcCallbackResponse {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OidcCompleteRequest {
     pub verification_token: String,
@@ -534,14 +439,17 @@ pub struct OidcCompleteRequest {
     pub signed_pre_key: SignedPreKey,
 }
 
+pub fn oidc_routes() -> Router<AppState> {
+    Router::new()
+        .route("/auth/v1/oidc/login", get(oidc_login_handler))
+        .route("/auth/v1/oidc/callback", get(oidc_callback_handler))
+        .route("/auth/v1/oidc/complete", post(oidc_complete_handler))
+}
+
 pub async fn oidc_login_handler(
     State(state): State<AppState>,
 ) -> Result<Json<OidcLoginResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
-
+    let oidc = state.oidc();
     let (login_url, csrf_token, _nonce) = oidc.start_auth()?;
 
     Ok(Json(OidcLoginResponse {
@@ -554,17 +462,14 @@ pub async fn oidc_callback_handler(
     State(state): State<AppState>,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Json<OidcCallbackResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
-
     // Verify CSRF token is provided
     if query.state.is_empty() {
         return Err(AppError::Unauthorized(
             "CSRF token (state) is required".to_string(),
         ));
     }
+
+    let oidc = state.oidc();
 
     // Exchange code and verify CSRF token + nonce + ID token signature
     let (email, sub) = oidc.exchange_code(&query.code, &query.state).await?;
@@ -586,14 +491,24 @@ pub async fn oidc_complete_handler(
     TypedHeader(user_agent): TypedHeader<UserAgent>,
     Json(req): Json<OidcCompleteRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
-    let oidc = state
-        .oidc_provider
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
+    let oidc = state.oidc();
 
-    let response = oidc
+    let (_provider, _email, uid) = oidc.verify_verification_token(&req.verification_token)?;
+
+    let user = oidc
+        .storage
+        .users
+        .get_user_by_uid(&uid)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    let actor = create_person(&state.domain, &user.uid, None, user.username, None, None);
+
+    state
+        .sessions
         .complete_login(
-            &req.verification_token,
+            &uid,
+            actor,
             &req.device_name,
             &req.identity_key,
             req.registration_id,
@@ -602,7 +517,5 @@ pub async fn oidc_complete_handler(
             &ip.to_string(),
             &user_agent.to_string(),
         )
-        .await?;
-
-    Ok(Json(response))
+        .await
 }

@@ -5,10 +5,7 @@ use crate::{
     activitypub::{
         Activity,
         handlers::outbox::KEY_COLLECTION_URL,
-        types::{
-            activity::{ActivityBase, CreateView},
-            eko_types::EncryptedMessageView,
-        },
+        types::{activity::CreateView, eko_types::EncryptedMessageView},
     },
     devices::DeviceId,
     errors::AppError,

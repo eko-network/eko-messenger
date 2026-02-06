@@ -29,26 +29,17 @@ async fn test_login_creates_actor() {
     assert_field_equals(&actor, "preferredUsername", &alice.username.clone().into());
 }
 
-/// Test that login without credentials fails
+/// Test that SessionManager validation works
 #[tokio::test]
-async fn test_login_without_credentials_fails() {
+async fn test_session_validation() {
     let app = spawn_app().await;
 
-    let login_url = format!("{}/auth/v1/login", &app.address);
+    let alice = TestUser::create(&app, "alice").await;
 
-    // Send empty/invalid request
-    let response = app
-        .client
-        .post(&login_url)
-        .header("User-Agent", "test-client")
-        .json(&serde_json::json!({}))
-        .send()
-        .await
-        .expect("Request failed");
+    // Verify that SessionManager can verify the token
+    let claims = app.sessions.verify_access_token(&alice.devices[0].token);
+    assert!(claims.is_ok(), "Token should be valid");
 
-    // Should fail
-    assert!(
-        !response.status().is_success(),
-        "Login without credentials should fail"
-    );
+    let claims = claims.unwrap();
+    assert_eq!(claims.sub, alice.uid, "Token should contain correct UID");
 }
