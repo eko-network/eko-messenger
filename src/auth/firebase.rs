@@ -65,7 +65,7 @@ async fn get_token(provider: &Arc<dyn TokenProvider>) -> Result<Arc<Token>, gcp_
 impl Firebase {
     pub async fn new_from_env(domain: Arc<String>, client: reqwest::Client) -> Result<Self> {
         let service_account_path = var("GOOGLE_APPLICATION_CREDENTIALS")
-            .expect("GOOGLE_APPLICATION_CREDENTIALS should be set in enviroment");
+            .expect("GOOGLE_APPLICATION_CREDENTIALS should be set in environment");
 
         let service_account: Value = serde_json::from_str(
             &fs::read_to_string(&service_account_path)

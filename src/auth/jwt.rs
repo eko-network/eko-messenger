@@ -25,7 +25,7 @@ pub struct JwtHelper {
 impl JwtHelper {
     pub fn new_from_env() -> anyhow::Result<Self> {
         let secret = var_os("JWT_SECRET")
-            .expect("JWT_SECRET not found in enviroment")
+            .expect("JWT_SECRET not found in environment")
             .into_string()
             .map_err(|_| anyhow::anyhow!("Failed to convert from OsString to String"))?;
         let decoding_key = DecodingKey::from_secret(secret.as_ref());
