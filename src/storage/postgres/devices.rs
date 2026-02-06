@@ -177,7 +177,7 @@ impl DeviceStore for PostgresDeviceStore {
             .await?;
 
         let expires_at = time::OffsetDateTime::now_utc()
-            + time::Duration::seconds(crate::auth::REFRESH_EXPIRATION);
+            + time::Duration::seconds(crate::auth::session::REFRESH_EXPIRATION);
 
         let new_token = sqlx::query!(
             r#"

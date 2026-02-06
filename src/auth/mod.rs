@@ -1,25 +1,30 @@
+pub mod jwt;
+pub mod session;
+
+use crate::{activitypub::Person, errors::AppError};
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait IdentityProvider: Send + Sync {
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError>;
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError>;
+}
+
 #[cfg(feature = "auth-firebase")]
 pub mod firebase;
-pub mod handlers;
-pub mod jwt;
-pub mod provider;
+#[cfg(feature = "auth-firebase")]
+pub use firebase::FirebaseAuth;
 
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
-
-#[cfg(feature = "auth-firebase")]
-pub use firebase::FirebaseAuth;
-pub use handlers::{
-    Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, REFRESH_EXPIRATION,
-    RefreshRequest, RefreshResponse, SignedPreKey, SignupRequest, login_handler, logout_handler,
-    refresh_token_handler, signup_handler,
-};
-pub use jwt::{Claims, JwtHelper};
-
-pub use provider::{OidcProviderState, add_oidc_routes, build_auth};
-
 #[cfg(feature = "auth-oidc")]
-pub use oidc::{
-    OidcConfig, OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
-    oidc_login_handler,
+pub use oidc::OidcProvider;
+
+pub mod types;
+pub use types::{
+    LoginRequest, LoginResponse, LogoutRequest, PreKey, RefreshRequest, RefreshResponse,
+    SignedPreKey, SignupRequest,
 };
+
+pub use jwt::{Claims, JwtHelper};
+pub use session::SessionManager;

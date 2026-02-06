@@ -6,7 +6,7 @@ use jsonwebtoken::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{auth::handlers::JWT_LIFESPAN, devices::DeviceId};
+use crate::{auth::session::JWT_LIFESPAN, devices::DeviceId};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {

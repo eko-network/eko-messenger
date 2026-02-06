@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use async_trait::async_trait;
 use gcp_auth::{Token, TokenProvider};
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -8,11 +9,14 @@ use std::sync::Arc;
 use tokio::fs;
 
 use crate::{
+    AppState,
     activitypub::{Person, create_person},
     auth::IdentityProvider,
     errors::AppError,
 };
-use async_trait::async_trait;
+use axum::{Json, Router, extract::State, routing::post};
+use axum_client_ip::ClientIp;
+use axum_extra::{TypedHeader, headers::UserAgent};
 
 pub struct FirebaseAuth {
     client: reqwest::Client,
@@ -88,11 +92,8 @@ impl FirebaseAuth {
             token_provider: provider,
         })
     }
-}
 
-#[async_trait]
-impl IdentityProvider for FirebaseAuth {
-    async fn login_with_email(
+    pub async fn login_with_email(
         &self,
         email: String,
         password: String,
@@ -124,7 +125,7 @@ impl IdentityProvider for FirebaseAuth {
         match (status.is_success(), api_response) {
             (true, ApiResponse::Success(sign_in)) => {
                 let uid = sign_in.local_id;
-                Ok((Self::person_from_uid(self, &uid).await?, uid))
+                Ok((self.person_from_uid(&uid).await?, uid))
             }
             (false, ApiResponse::Error(err)) => Err(AppError::Unauthorized(err.error.message)),
             _ => Err(AppError::InternalError(anyhow!(
@@ -133,7 +134,7 @@ impl IdentityProvider for FirebaseAuth {
         }
     }
 
-    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
+    pub async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
         let token = get_token(&self.token_provider).await?;
         let url = format!(
             "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents/users/{}",
@@ -170,7 +171,7 @@ impl IdentityProvider for FirebaseAuth {
         ))
     }
 
-    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+    pub async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
         let token = get_token(&self.token_provider).await?;
         let url = format!(
             "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:runQuery",
@@ -206,4 +207,46 @@ impl IdentityProvider for FirebaseAuth {
             .ok_or(AppError::NotFound("User Not Found".to_string()))?;
         Ok(uid.to_string())
     }
+}
+
+#[async_trait]
+impl IdentityProvider for FirebaseAuth {
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError> {
+        self.person_from_uid(uid).await
+    }
+
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError> {
+        self.uid_from_username(username).await
+    }
+}
+
+pub fn firebase_routes() -> Router<AppState> {
+    Router::new().route("/auth/v1/login", post(login_handler))
+}
+
+pub async fn login_handler(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    TypedHeader(user_agent): TypedHeader<UserAgent>,
+    Json(req): Json<crate::auth::LoginRequest>,
+) -> Result<Json<crate::auth::LoginResponse>, AppError> {
+    let (actor, uid) = state
+        .firebase
+        .login_with_email(req.email, req.password)
+        .await?;
+
+    state
+        .sessions
+        .complete_login(
+            &uid,
+            actor,
+            &req.device_name,
+            &req.identity_key,
+            req.registration_id,
+            &req.pre_keys,
+            &req.signed_pre_key,
+            &ip.to_string(),
+            &user_agent.to_string(),
+        )
+        .await
 }

@@ -8,6 +8,6 @@ pub async fn actor_handler(
     State(state): State<AppState>,
     Path(uid): Path<String>,
 ) -> Result<Json<Person>, AppError> {
-    let actor = state.auth.provider.person_from_uid(&uid).await?;
+    let actor = state.identity.person_from_uid(&uid).await?;
     Ok(Json(actor))
 }
