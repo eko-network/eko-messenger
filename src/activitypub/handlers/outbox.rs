@@ -52,11 +52,11 @@ pub async fn post_to_outbox(
             ));
         }
         // The message is valid, so we assign id to the inner
-        let message_id = format!("https://{}/messages/{}", state.domain, Uuid::new_v4());
+        let message_id = format!("{}/messages/{}", state.domain, Uuid::new_v4());
         create.object.id = Some(message_id);
     }
     // all activities get an ID
-    let activity_id = format!("https://{}/activities/{}", state.domain, Uuid::new_v4());
+    let activity_id = format!("{}/activities/{}", state.domain, Uuid::new_v4());
     payload.as_base_mut().set_id(activity_id);
 
     if let Activity::Take(take) = &mut payload {
