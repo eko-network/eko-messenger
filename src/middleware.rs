@@ -22,7 +22,7 @@ pub async fn auth_middleware(
         ));
     };
 
-    let claims = state.auth.verify_access_token(&token)?;
+    let claims = state.sessions.verify_access_token(&token)?;
     request.extensions_mut().insert(Arc::new(claims));
 
     let response = next.run(request).await;

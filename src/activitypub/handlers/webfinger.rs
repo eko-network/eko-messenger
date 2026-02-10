@@ -38,7 +38,7 @@ pub async fn webfinger_handler(
         )));
     }
 
-    let uid = state.auth.provider.uid_from_username(username).await?;
+    let uid = state.identity.uid_from_username(username).await?;
 
     let actor_url = actor_url(&state.domain, &uid);
 
