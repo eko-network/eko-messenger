@@ -1,5 +1,6 @@
 /// Defines the internal system state
 use crate::devices::DeviceId;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -52,4 +53,17 @@ pub struct StoredUser {
     pub oidc_issuer: Option<String>,
     pub oidc_sub: Option<String>,
     pub created_at: OffsetDateTime,
+}
+
+/// Opaque encrypted group state blob stored for device synchronization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredGroupState {
+    pub id: String,
+    pub group_id: Uuid,
+    pub user_id: String,
+    pub epoch: i64,
+    pub encrypted_content: Vec<u8>,
+    pub media_type: String,
+    pub encoding: String,
 }

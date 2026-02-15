@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, group_id, user_id, epoch, encrypted_content, media_type, encoding\n            FROM encrypted_group_states\n            WHERE user_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "group_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "epoch",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "encrypted_content",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "media_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "encoding",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "17150d9e6bc2d47be9c6e6648638c6ce8b10fc47b1fe4f8779d508b83904d85b"
+}

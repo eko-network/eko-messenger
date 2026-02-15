@@ -2,7 +2,7 @@ use crate::{
     activitypub::{Activity, Create, types::eko_types::DeviceAction},
     devices::DeviceId,
     errors::AppError,
-    storage::models::{RegisterDeviceResult, RotatedRefreshToken},
+    storage::models::{RegisterDeviceResult, RotatedRefreshToken, StoredGroupState},
 };
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -139,4 +139,24 @@ pub trait UserStore: Send + Sync {
         oidc_issuer: &str,
         oidc_sub: &str,
     ) -> Result<(), AppError>;
+}
+
+#[async_trait]
+pub trait GroupStore: Send + Sync {
+    /// Upsert encrypted group state. Replaces existing state only if epoch is higher.
+    /// Returns true if the state was inserted/updated, false if the epoch was stale.
+    async fn upsert_group_state(&self, state: &StoredGroupState) -> Result<bool, AppError>;
+
+    /// Get a single encrypted group state by group_id for a user.
+    async fn get_group_state(
+        &self,
+        user_id: &str,
+        group_id: &Uuid,
+    ) -> Result<Option<StoredGroupState>, AppError>;
+
+    /// List all encrypted group states for a user.
+    async fn get_all_group_states(&self, user_id: &str) -> Result<Vec<StoredGroupState>, AppError>;
+
+    /// Delete an encrypted group state. Returns true if a row was deleted.
+    async fn delete_group_state(&self, user_id: &str, group_id: &Uuid) -> Result<bool, AppError>;
 }

@@ -2,6 +2,7 @@ use crate::common::{TestApp, assert_success};
 use eko_messenger::activitypub::{Activity, Create, EncryptedMessage, EncryptedMessageEntry};
 use eko_messenger::devices::DeviceId;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 pub struct TestDevice {
     pub id: DeviceId,
@@ -326,6 +327,110 @@ impl TestUser {
     ) -> reqwest::Response {
         self.send_delivered_from_device(app, 0, create_id, recipient)
             .await
+    }
+
+    /// PUT /users/{uid}/groups/{group_id} from a specific device
+    pub async fn upsert_group_state_with_device(
+        &self,
+        app: &TestApp,
+        device_index: usize,
+        group_id: Uuid,
+        epoch: i64,
+        encrypted_content: &[u8],
+    ) -> reqwest::Response {
+        let device = &self.devices[device_index];
+        let url = format!("{}/users/{}/groups/{}", app.address, self.uid, group_id);
+
+        app.client
+            .put(&url)
+            .bearer_auth(&device.token)
+            .json(&json!({
+                "epoch": epoch,
+                "encryptedContent": encrypted_content,
+            }))
+            .send()
+            .await
+            .expect("Failed to upsert group state")
+    }
+
+    /// PUT group state from the first device
+    pub async fn upsert_group_state(
+        &self,
+        app: &TestApp,
+        group_id: Uuid,
+        epoch: i64,
+        encrypted_content: &[u8],
+    ) -> reqwest::Response {
+        self.upsert_group_state_with_device(app, 0, group_id, epoch, encrypted_content)
+            .await
+    }
+
+    /// GET /users/{uid}/groups/{group_id} from a specific device
+    pub async fn get_group_state_with_device(
+        &self,
+        app: &TestApp,
+        device_index: usize,
+        group_id: Uuid,
+    ) -> reqwest::Response {
+        let device = &self.devices[device_index];
+        let url = format!("{}/users/{}/groups/{}", app.address, self.uid, group_id);
+
+        app.client
+            .get(&url)
+            .bearer_auth(&device.token)
+            .send()
+            .await
+            .expect("Failed to get group state")
+    }
+
+    /// GET single group state from the first device
+    pub async fn get_group_state(&self, app: &TestApp, group_id: Uuid) -> reqwest::Response {
+        self.get_group_state_with_device(app, 0, group_id).await
+    }
+
+    /// GET /users/{uid}/groups from a specific device
+    pub async fn get_all_group_states_with_device(
+        &self,
+        app: &TestApp,
+        device_index: usize,
+    ) -> reqwest::Response {
+        let device = &self.devices[device_index];
+        let url = format!("{}/users/{}/groups", app.address, self.uid);
+
+        app.client
+            .get(&url)
+            .bearer_auth(&device.token)
+            .send()
+            .await
+            .expect("Failed to get all group states")
+    }
+
+    /// GET all group states from the first device
+    pub async fn get_all_group_states(&self, app: &TestApp) -> reqwest::Response {
+        self.get_all_group_states_with_device(app, 0).await
+    }
+
+    /// DELETE /users/{uid}/groups/{group_id} from a specific device
+    pub async fn delete_group_state_with_device(
+        &self,
+        app: &TestApp,
+        device_index: usize,
+        group_id: Uuid,
+    ) -> reqwest::Response {
+        let device = &self.devices[device_index];
+        let url = format!("{}/users/{}/groups/{}", app.address, self.uid, group_id);
+
+        app.client
+            .delete(&url)
+            .bearer_auth(&device.token)
+            .send()
+            .await
+            .expect("Failed to delete group state")
+    }
+
+    /// DELETE group state from the first device
+    pub async fn delete_group_state(&self, app: &TestApp, group_id: Uuid) -> reqwest::Response {
+        self.delete_group_state_with_device(app, 0, group_id).await
     }
 }
 

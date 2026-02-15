@@ -22,6 +22,10 @@ use crate::{
     },
     config::storage_config,
     devices::get_approval_status_handler,
+    groups::{
+        delete_group_state_handler, get_all_group_states_handler, get_group_state_handler,
+        upsert_group_state_handler,
+    },
     middleware::auth_middleware,
     notifications::{NotificationService, register_handler},
     storage::Storage,
@@ -66,7 +70,13 @@ pub fn app(app_state: AppState, ip_source_str: String) -> anyhow::Result<Router>
             get(get_approval_status_handler),
         )
         .route(SOCKET_URL, get(ws_handler))
-        // you can add more routes here
+        .route("/users/{uid}/groups", get(get_all_group_states_handler))
+        .route(
+            "/users/{uid}/groups/{group_id}",
+            get(get_group_state_handler)
+                .put(upsert_group_state_handler)
+                .delete(delete_group_state_handler),
+        )
         .route_layer(from_fn_with_state(app_state.clone(), auth_middleware));
     let ip_source: ClientIpSource = ip_source_str.parse()?;
 
