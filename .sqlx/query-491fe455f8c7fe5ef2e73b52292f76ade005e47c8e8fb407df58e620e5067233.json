@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO encrypted_group_states (id, group_id, user_id, epoch, encrypted_content, encoding)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (user_id, group_id) DO UPDATE\n            SET epoch = EXCLUDED.epoch,\n                encrypted_content = EXCLUDED.encrypted_content,\n                encoding = EXCLUDED.encoding,\n                id = EXCLUDED.id\n            WHERE encrypted_group_states.epoch < EXCLUDED.epoch\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Int8",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "491fe455f8c7fe5ef2e73b52292f76ade005e47c8e8fb407df58e620e5067233"
+}
