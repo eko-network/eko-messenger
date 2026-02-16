@@ -5,6 +5,16 @@ pub fn default_context_value() -> Value {
     Value::String(super::ACTIVITY_STREAMS_CONTEXT.to_string())
 }
 
+/// ActivityPub Actor endpoints
+/// Contains additional endpoints which may be useful for this actor
+/// Only populated for the owning user when authenticated
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Endpoints {
+    /// URL to the user's encrypted group state collection
+    pub groups: String,
+}
+
 /// ActivityPub Person (Actor) type
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +31,8 @@ pub struct Person {
     pub profile_picture: Option<String>,
     pub summary: Option<String>,
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<Endpoints>,
 }
 
 /// Create a new Person actor
@@ -48,6 +60,7 @@ pub fn create_person(
         preferred_username,
         name,
         profile_picture,
+        endpoints: None,
     }
 }
 

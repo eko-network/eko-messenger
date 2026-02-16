@@ -67,3 +67,84 @@ async fn test_get_nonexistent_actor() {
 
     assert_status(response, 404).await;
 }
+
+/// Test that the actor includes group endpoint when fetched by the owner
+#[tokio::test]
+async fn test_get_actor_authenticated_includes_endpoints() {
+    let app = spawn_app().await;
+    let alice = TestUser::create(&app, "alice").await;
+
+    // Fetch own actor with auth token
+    let response = app
+        .client
+        .get(&alice.actor_id)
+        .bearer_auth(&alice.devices[0].token)
+        .header("Accept", "application/activity+json")
+        .send()
+        .await
+        .expect("Request failed");
+
+    let response = assert_status(response, 200).await;
+    let actor: serde_json::Value = response.json().await.unwrap();
+
+    // Should have endpoints with groups URL
+    assert_has_field(&actor, "endpoints");
+    let expected_groups_url = format!("{}/users/{}/groups", app.domain, alice.uid);
+    assert_field_equals(
+        actor.get("endpoints").unwrap(),
+        "groups",
+        &expected_groups_url.into(),
+    );
+}
+
+/// Test that the actor does NOT include endpoints when fetched unauthenticated
+#[tokio::test]
+async fn test_get_actor_unauthenticated_excludes_endpoints() {
+    let app = spawn_app().await;
+    let alice = TestUser::create(&app, "alice").await;
+
+    // Fetch actor without auth
+    let response = app
+        .client
+        .get(&alice.actor_id)
+        .header("Accept", "application/activity+json")
+        .send()
+        .await
+        .expect("Request failed");
+
+    let response = assert_status(response, 200).await;
+    let actor: serde_json::Value = response.json().await.unwrap();
+
+    // Should not have endpoints
+    assert!(
+        actor.get("endpoints").is_none(),
+        "Unauthenticated actor response should not include endpoints"
+    );
+}
+
+/// Test that the actor does NOT include endpoints when fetched by another user
+#[tokio::test]
+async fn test_get_actor_other_user_excludes_endpoints() {
+    let app = spawn_app().await;
+    let alice = TestUser::create(&app, "alice").await;
+    let bob = TestUser::create(&app, "bob").await;
+
+    // Bob fetches Alice's actor with Bob's token
+    let response = app
+        .client
+        .get(&alice.actor_id)
+        .bearer_auth(&bob.devices[0].token)
+        .header("Accept", "application/activity+json")
+        .send()
+        .await
+        .expect("Request failed");
+
+    let response = assert_status(response, 200).await;
+    let actor: serde_json::Value = response.json().await.unwrap();
+
+    // Should NOT have endpoints (Bob is not Alice)
+    assert!(
+        actor.get("endpoints").is_none(),
+        "Actor response should not include endpoints for other users"
+    );
+}
