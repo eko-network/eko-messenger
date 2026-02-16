@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Fetch an Actor profile. Public route, but if the requester is the
-/// authenticated owner we include the  endpoints
+/// authenticated owner we include the endpoints
 pub async fn actor_handler(
     State(state): State<AppState>,
     Path(uid): Path<String>,
