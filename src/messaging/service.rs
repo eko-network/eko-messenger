@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     AppState,
@@ -11,6 +11,7 @@ use crate::{
     errors::AppError,
 };
 use futures::future::join_all;
+use tokio::task::yield_now;
 use tracing::warn;
 
 /// Main service for orchestrating message delivery
@@ -66,11 +67,13 @@ impl MessagingService {
                 }
 
                 let from_did_url = from_did.to_url(&state.domain);
+                let message_from_did = from_dids.into_iter().next().unwrap();
 
-                if from_did_url != *from_dids.into_iter().next().unwrap() {
-                    return Err(AppError::BadRequest(
-                        "Message sender does not match from".to_string(),
-                    ));
+                if from_did_url != *message_from_did {
+                    return Err(AppError::BadRequest(format!(
+                        "Message sender does not match from: ({} != {})",
+                        from_did_url, message_from_did
+                    )));
                 }
 
                 if is_sync_message {
@@ -84,40 +87,55 @@ impl MessagingService {
 
                 state.storage.activities.insert_create(create).await?;
 
-                join_all(create.object.content.iter().map(|entry| async move {
-                    let activity_view = CreateView {
-                        context: &create.context,
-                        id: create.id.as_deref(),
-                        actor: &create.actor,
-                        object: EncryptedMessageView {
-                            context: &create.object.context,
-                            type_field: &create.object.type_field,
-                            id: create.object.id.as_deref(),
-                            content: std::slice::from_ref(entry),
-                            attributed_to: &create.object.attributed_to,
-                            to: &create.object.to,
-                        },
-                        to: &create.to,
-                        type_field: "Create",
-                    };
+                tokio::spawn({
+                    // try to delay a little
+                    yield_now().await;
+                    let state = state.clone();
+                    let create = Arc::new(create.clone());
+                    async move {
+                        let mut futures = Vec::new();
+                        for entry in create.object.content.iter() {
+                            let state = state.clone();
+                            let create = Arc::clone(&create);
+                            let entry = entry.clone();
 
-                    if let Ok(did) = DeviceId::from_url(&entry.to) {
-                        if !state
-                            .sockets
-                            .try_websocket_delivery(&activity_view, did)
-                            .await
-                            && let Err(e) = state.notification_service.notify(did).await
-                        {
-                            warn!("Tried to notify {} Error: {:?}", entry.to, e);
+                            futures.push(async move {
+                                let activity_view = CreateView {
+                                    context: &create.context,
+                                    id: create.id.as_deref(),
+                                    actor: &create.actor,
+                                    object: EncryptedMessageView {
+                                        context: &create.object.context,
+                                        type_field: &create.object.type_field,
+                                        id: create.object.id.as_deref(),
+                                        content: std::slice::from_ref(&entry),
+                                        attributed_to: &create.object.attributed_to,
+                                        to: &create.object.to,
+                                    },
+                                    to: &create.to,
+                                    type_field: "Create",
+                                };
+
+                                if let Ok(did) = DeviceId::from_url(&entry.to) {
+                                    if !state
+                                        .sockets
+                                        .try_websocket_delivery(&activity_view, did)
+                                        .await
+                                        && let Err(e) = state.notification_service.notify(did).await
+                                    {
+                                        warn!("Tried to notify {} Error: {:?}", entry.to, e);
+                                    }
+                                } else {
+                                    warn!("Tried to notify {}, url malformed", entry.to);
+                                }
+                            });
                         }
-                    } else {
-                        warn!("Tried to notify {}, url malformed", entry.to);
+                        join_all(futures).await;
                     }
-                }))
-                .await;
+                });
             }
             Activity::Take(take) => {
-                // this redoes compute from prev function (a little bad)
+                // this re-does compute from prev function (a little bad)
                 let device_url = take.to.trim_end_matches(KEY_COLLECTION_URL);
                 let target_did = DeviceId::from_url(device_url)?;
                 // try to send over socket, if it fails write to db
