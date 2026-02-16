@@ -60,7 +60,7 @@ impl DeviceStore for PostgresDeviceStore {
     ) -> Result<RegisterDeviceResult, AppError> {
         let approved_devices = self.get_approved_devices(uid).await?;
 
-        let tofu = approved_devices.is_empty() || true;
+        let tofu = approved_devices.is_empty();
 
         let did = DeviceId::new(Uuid::new_v4());
 
