@@ -19,6 +19,12 @@ impl<'a> ActivityData for CreateView<'a> {}
 pub struct WebSocketService {
     sockets: DashMap<DeviceId, mpsc::UnboundedSender<Message>>,
 }
+impl Default for WebSocketService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WebSocketService {
     pub fn new() -> Self {
         WebSocketService {

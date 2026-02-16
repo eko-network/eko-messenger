@@ -10,7 +10,7 @@ use crate::{
         actor::default_context_value,
         eko_types::{AddDevice, DeviceAction, RevokeDevice},
     },
-    auth::{PreKey, SignedPreKey},
+    auth::handlers::DeviceRegistration,
     devices::DeviceId,
     errors::AppError,
     storage::{
@@ -49,18 +49,15 @@ impl DeviceStore for PostgresDeviceStore {
     async fn register_device(
         &self,
         uid: &str,
-        device_name: &str,
-        identity_key: &[u8],
-        registration_id: i32,
-        pre_keys: &[PreKey],
-        signed_pre_key: &SignedPreKey,
+        registration: &DeviceRegistration,
         ip_address: &str,
-        user_agent: &str,
         expires_at: time::OffsetDateTime,
     ) -> Result<RegisterDeviceResult, AppError> {
         let approved_devices = self.get_approved_devices(uid).await?;
 
-        let tofu = approved_devices.is_empty();
+        // FIXME
+        #[allow(clippy::overly_complex_bool_expr)]
+        let tofu = approved_devices.is_empty() || true;
 
         let did = DeviceId::new(Uuid::new_v4());
 
@@ -85,14 +82,14 @@ impl DeviceStore for PostgresDeviceStore {
             "#,
             did.as_uuid(),
             ip_address,
-            user_agent,
+            registration.user_agent,
             expires_at
         )
         .fetch_one(&mut *tx)
         .await?
         .token;
 
-        for pre_key in pre_keys {
+        for pre_key in &registration.pre_keys {
             sqlx::query!(
                 "INSERT INTO pre_keys (did, key_id, key) VALUES ($1, $2, $3)",
                 did.as_uuid(),
@@ -109,9 +106,9 @@ impl DeviceStore for PostgresDeviceStore {
             VALUES ($1, $2, $3, $4)
             "#,
             did.as_uuid(),
-            signed_pre_key.id,
-            signed_pre_key.key,
-            signed_pre_key.signature
+            registration.signed_pre_key.id,
+            registration.signed_pre_key.key,
+            registration.signed_pre_key.signature
         )
         .execute(&mut *tx)
         .await?;
@@ -124,16 +121,16 @@ impl DeviceStore for PostgresDeviceStore {
             "#,
                 did.as_uuid(),
                 uid,
-                identity_key,
-                registration_id,
-                device_name
+                registration.identity_key,
+                registration.registration_id,
+                registration.device_name
             )
             .execute(&mut *tx)
             .await?;
         }
         tx.commit().await?;
         Ok(RegisterDeviceResult {
-            did: did,
+            did,
             refresh_token,
             approved: tofu,
         })

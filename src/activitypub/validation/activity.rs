@@ -11,7 +11,7 @@ pub fn validate_activity(activity: &Value) -> Result<(), AppError> {
     //    Validate Eko-specific requirements
 
     // Check for @context
-    if !activity.get("@context").is_some() {
+    if activity.get("@context").is_none() {
         // Not requiring it because ActivityPub says implementors "should" include it,
         // not "must" https://www.w3.org/TR/activitypub/#obj
         // TODO do we do something with @context?
@@ -19,17 +19,17 @@ pub fn validate_activity(activity: &Value) -> Result<(), AppError> {
     }
 
     // Check for required type
-    if !activity.get("type").is_some() {
+    if activity.get("type").is_none() {
         return Err(AppError::BadRequest("Activity missing type".to_string()));
     }
 
     // Check for required actor
-    if !activity.get("actor").is_some() {
+    if activity.get("actor").is_none() {
         return Err(AppError::BadRequest("Activity missing actor".to_string()));
     }
 
     // Check for id
-    if !activity.get("id").is_some() {
+    if activity.get("id").is_none() {
         // Not required because some objects are transient
         tracing::debug!("Activity is transient")
     }
@@ -56,7 +56,7 @@ pub fn validate_create_activity(activity: &Value) -> Result<(), AppError> {
     }
 
     // Check for required object
-    if !activity.get("object").is_some() {
+    if activity.get("object").is_none() {
         return Err(AppError::BadRequest(
             "Create activity missing object".to_string(),
         ));

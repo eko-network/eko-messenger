@@ -3,7 +3,7 @@ use crate::{
     activitypub::{Person, actor_url, create_person},
     auth::{
         IdentityProvider, LoginResponse, PreKey, SignedPreKey,
-        handlers::{JWT_LIFESPAN, REFRESH_EXPIRATION},
+        handlers::{DeviceRegistration, JWT_LIFESPAN, REFRESH_EXPIRATION},
         jwt::JwtHelper,
     },
     errors::AppError,
@@ -38,6 +38,7 @@ pub struct OidcConfig {
     pub provider_metadata: CoreProviderMetadata,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct AuthState {
     csrf_token: String,
@@ -369,13 +370,8 @@ impl OidcProvider {
     pub async fn complete_login(
         &self,
         verification_token: &str,
-        device_name: &str,
-        identity_key: &[u8],
-        registration_id: i32,
-        pre_keys: &[PreKey],
-        signed_pre_key: &SignedPreKey,
+        registration: DeviceRegistration,
         ip_address: &str,
-        user_agent: &str,
     ) -> Result<LoginResponse, AppError> {
         let (_provider, _email, uid) = self.verify_verification_token(verification_token)?;
 
@@ -394,17 +390,7 @@ impl OidcProvider {
         let register = self
             .storage
             .devices
-            .register_device(
-                &uid,
-                device_name,
-                identity_key,
-                registration_id,
-                pre_keys,
-                signed_pre_key,
-                ip_address,
-                user_agent,
-                expires_at,
-            )
+            .register_device(&uid, &registration, ip_address, expires_at)
             .await?;
 
         // Upsert local actor
@@ -591,17 +577,17 @@ pub async fn oidc_complete_handler(
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("OIDC is not configured".to_string()))?;
 
+    let registration = DeviceRegistration {
+        device_name: req.device_name,
+        identity_key: req.identity_key,
+        registration_id: req.registration_id,
+        pre_keys: req.pre_keys,
+        signed_pre_key: req.signed_pre_key,
+        user_agent: user_agent.to_string(),
+    };
+
     let response = oidc
-        .complete_login(
-            &req.verification_token,
-            &req.device_name,
-            &req.identity_key,
-            req.registration_id,
-            &req.pre_keys,
-            &req.signed_pre_key,
-            &ip.to_string(),
-            &user_agent.to_string(),
-        )
+        .complete_login(&req.verification_token, registration, &ip.to_string())
         .await?;
 
     Ok(Json(response))

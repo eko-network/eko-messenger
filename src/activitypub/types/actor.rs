@@ -60,8 +60,7 @@ pub fn actor_url(domain: &str, uid: &str) -> String {
 pub fn actor_uid(url: &str) -> anyhow::Result<String> {
     Ok(url
         .split('/')
-        .filter(|v| !v.is_empty())
-        .last()
+        .rfind(|v| !v.is_empty())
         .ok_or(anyhow::anyhow!("unknown url format"))?
         .to_string())
 }

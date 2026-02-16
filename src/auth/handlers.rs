@@ -23,7 +23,7 @@ use crate::{
 use jsonwebtoken;
 
 #[serde_as]
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreKey {
     pub id: i32,
@@ -32,7 +32,7 @@ pub struct PreKey {
 }
 
 #[serde_as]
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedPreKey {
     pub id: i32,
@@ -54,6 +54,19 @@ pub struct LoginRequest {
     pub registration_id: i32,
     pub pre_keys: Vec<PreKey>,
     pub signed_pre_key: SignedPreKey,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRegistration {
+    pub device_name: String,
+    #[serde_as(as = "Base64")]
+    pub identity_key: Vec<u8>,
+    pub registration_id: i32,
+    pub pre_keys: Vec<PreKey>,
+    pub signed_pre_key: SignedPreKey,
+    pub user_agent: String,
 }
 
 #[derive(Deserialize, Debug, Serialize)]
@@ -133,20 +146,18 @@ impl Auth {
             .await?;
         let expires_at =
             time::OffsetDateTime::now_utc() + time::Duration::seconds(REFRESH_EXPIRATION);
+        let registration = DeviceRegistration {
+            device_name: req.device_name,
+            identity_key: req.identity_key,
+            registration_id: req.registration_id,
+            pre_keys: req.pre_keys,
+            signed_pre_key: req.signed_pre_key,
+            user_agent: user_agent.to_string(),
+        };
         let register = self
             .storage
             .devices
-            .register_device(
-                &uid,
-                &req.device_name,
-                &req.identity_key,
-                req.registration_id,
-                &req.pre_keys,
-                &req.signed_pre_key,
-                ip_address,
-                user_agent,
-                expires_at,
-            )
+            .register_device(&uid, &registration, ip_address, expires_at)
             .await?;
 
         let actor_id = actor_url(&self.domain, &uid);
