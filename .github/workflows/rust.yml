@@ -1,0 +1,61 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# cancel jobs when new commit is pushed
+# continue job run from pr to main
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
+      PORT: "3000"
+      DOMAIN: "http://127.0.0.1:3000"
+      JWT_SECRET: "ci-test-secret-key-at-least-32-characters-long"
+      VAPID_KEY_PATH: "/tmp/ci-vapid-private.pem"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - name: Check formatting
+        run: cargo fmt -- --check
+      - name: Clippy
+        env:
+          SQLX_OFFLINE: "true"
+        run: cargo clippy -- -D warnings
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features rustls,postgres
+      - name: Run migrations
+        run: sqlx migrate run
+      - name: Test
+        run: cargo test

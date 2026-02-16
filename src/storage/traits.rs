@@ -1,5 +1,6 @@
 use crate::{
     activitypub::{Activity, Create, types::eko_types::DeviceAction},
+    auth::handlers::DeviceRegistration,
     devices::DeviceId,
     errors::AppError,
     storage::models::{RegisterDeviceResult, RotatedRefreshToken, StoredGroupState},
@@ -21,7 +22,7 @@ pub trait ActivityStore: Send + Sync {
     async fn insert_non_create(
         &self,
         activity: &Activity,
-        dids: &Vec<DeviceId>,
+        dids: &[DeviceId],
     ) -> Result<(), AppError>;
 
     /// Deletes a delivery request for a specific activity and device.
@@ -53,13 +54,8 @@ pub trait DeviceStore: Send + Sync {
     async fn register_device(
         &self,
         uid: &str,
-        device_name: &str,
-        identity_key: &[u8],
-        registration_id: i32,
-        pre_keys: &[crate::auth::PreKey],
-        signed_pre_key: &crate::auth::SignedPreKey,
+        registration: &DeviceRegistration,
         ip_address: &str,
-        user_agent: &str,
         expires_at: time::OffsetDateTime,
     ) -> Result<RegisterDeviceResult, AppError>;
 

@@ -154,7 +154,7 @@ impl ActivityStore for PostgresActivityStore {
     async fn insert_non_create(
         &self,
         activity: &Activity,
-        dids: &Vec<DeviceId>,
+        dids: &[DeviceId],
     ) -> Result<(), AppError> {
         let activity_id = activity
             .as_base()

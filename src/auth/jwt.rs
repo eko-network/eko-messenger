@@ -32,8 +32,8 @@ impl JwtHelper {
         let encoding_key = EncodingKey::from_secret(secret.as_ref());
 
         Ok(JwtHelper {
-            encoding_key: encoding_key,
-            decoding_key: decoding_key,
+            encoding_key,
+            decoding_key,
         })
     }
     pub fn create_jwt(
@@ -48,7 +48,7 @@ impl JwtHelper {
 
         let claims = Claims {
             sub: uid.to_string(),
-            did: did,
+            did,
             exp,
             iat,
             roles: vec!["user".to_string()],
@@ -63,6 +63,6 @@ impl JwtHelper {
         token: &str,
     ) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
         let validation = Validation::new(Algorithm::HS256);
-        Ok(decode::<Claims>(token, &self.decoding_key, &validation)?)
+        decode::<Claims>(token, &self.decoding_key, &validation)
     }
 }

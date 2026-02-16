@@ -32,17 +32,16 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, claims: Arc<Claim
     match state.storage.activities.inbox_activities(claims.did).await {
         Ok(inbox_items) => {
             for item in inbox_items {
-                if let Ok(message_json) = serde_json::to_string(&item) {
-                    if tx
+                if let Ok(message_json) = serde_json::to_string(&item)
+                    && tx
                         .send(Message::Text(Utf8Bytes::from(message_json)))
                         .is_err()
-                    {
-                        warn!(
-                            "Failed to send offline message to {} - {}",
-                            claims.sub, claims.did
-                        );
-                        break;
-                    }
+                {
+                    warn!(
+                        "Failed to send offline message to {} - {}",
+                        claims.sub, claims.did
+                    );
+                    break;
                 }
             }
         }

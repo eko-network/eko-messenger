@@ -5,10 +5,7 @@ use crate::{
     activitypub::{
         Activity,
         handlers::outbox::KEY_COLLECTION_URL,
-        types::{
-            activity::{ActivityBase, CreateView},
-            eko_types::EncryptedMessageView,
-        },
+        types::{activity::CreateView, eko_types::EncryptedMessageView},
     },
     devices::DeviceId,
     errors::AppError,
@@ -53,7 +50,7 @@ impl MessagingService {
 
                 let mut fanout = crate::devices::DeviceService::list_device_ids(
                     state,
-                    &crate::activitypub::actor_uid(&activity.as_base().to())?,
+                    &crate::activitypub::actor_uid(activity.as_base().to())?,
                 )
                 .await?;
                 let from_dids: HashSet<&String> =
@@ -85,7 +82,7 @@ impl MessagingService {
                     return Err(AppError::BadRequest("device_list_mismatch".into()));
                 }
 
-                state.storage.activities.insert_create(&create).await?;
+                state.storage.activities.insert_create(create).await?;
 
                 join_all(create.object.content.iter().map(|entry| async move {
                     let activity_view = CreateView {
@@ -109,10 +106,9 @@ impl MessagingService {
                             .sockets
                             .try_websocket_delivery(&activity_view, did)
                             .await
+                            && let Err(e) = state.notification_service.notify(did).await
                         {
-                            if let Err(e) = state.notification_service.notify(did).await {
-                                warn!("Tried to notify {} Error: {:?}", entry.to, e);
-                            }
+                            warn!("Tried to notify {} Error: {:?}", entry.to, e);
                         }
                     } else {
                         warn!("Tried to notify {}, url malformed", entry.to);
@@ -133,7 +129,7 @@ impl MessagingService {
                     state
                         .storage
                         .activities
-                        .insert_non_create(activity, &vec![target_did])
+                        .insert_non_create(activity, &[target_did])
                         .await?;
                 }
             }
@@ -142,7 +138,7 @@ impl MessagingService {
 
                 let fanout = crate::devices::DeviceService::list_device_ids(
                     state,
-                    &crate::activitypub::actor_uid(&activity.as_base().to())?,
+                    &crate::activitypub::actor_uid(activity.as_base().to())?,
                 )
                 .await?;
 
