@@ -24,7 +24,6 @@ impl GroupService {
             user_id: user_id.to_string(),
             epoch,
             encrypted_content,
-            media_type: "application/eko-group-state".to_string(),
             encoding: "base64".to_string(),
         };
 

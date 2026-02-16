@@ -21,7 +21,6 @@ async fn test_upsert_group_state_creates_new() {
 
     assert_eq!(body["groupId"], group_id.to_string());
     assert_eq!(body["epoch"], 1);
-    assert_eq!(body["mediaType"], "application/eko-group-state");
     assert_eq!(body["encoding"], "base64");
 }
 

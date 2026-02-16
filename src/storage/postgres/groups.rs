@@ -22,12 +22,11 @@ impl GroupStore for PostgresGroupStore {
     async fn upsert_group_state(&self, state: &StoredGroupState) -> Result<bool, AppError> {
         let result = sqlx::query!(
             r#"
-            INSERT INTO encrypted_group_states (id, group_id, user_id, epoch, encrypted_content, media_type, encoding)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO encrypted_group_states (id, group_id, user_id, epoch, encrypted_content, encoding)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (user_id, group_id) DO UPDATE
             SET epoch = EXCLUDED.epoch,
                 encrypted_content = EXCLUDED.encrypted_content,
-                media_type = EXCLUDED.media_type,
                 encoding = EXCLUDED.encoding,
                 id = EXCLUDED.id
             WHERE encrypted_group_states.epoch < EXCLUDED.epoch
@@ -37,7 +36,6 @@ impl GroupStore for PostgresGroupStore {
             state.user_id,
             state.epoch,
             state.encrypted_content,
-            state.media_type,
             state.encoding,
         )
         .execute(&self.pool)
@@ -53,7 +51,7 @@ impl GroupStore for PostgresGroupStore {
     ) -> Result<Option<StoredGroupState>, AppError> {
         let row = sqlx::query!(
             r#"
-            SELECT id, group_id, user_id, epoch, encrypted_content, media_type, encoding
+            SELECT id, group_id, user_id, epoch, encrypted_content, encoding
             FROM encrypted_group_states
             WHERE user_id = $1 AND group_id = $2
             "#,
@@ -69,7 +67,6 @@ impl GroupStore for PostgresGroupStore {
             user_id: r.user_id,
             epoch: r.epoch,
             encrypted_content: r.encrypted_content,
-            media_type: r.media_type,
             encoding: r.encoding,
         }))
     }
@@ -77,7 +74,7 @@ impl GroupStore for PostgresGroupStore {
     async fn get_all_group_states(&self, user_id: &str) -> Result<Vec<StoredGroupState>, AppError> {
         let rows = sqlx::query!(
             r#"
-            SELECT id, group_id, user_id, epoch, encrypted_content, media_type, encoding
+            SELECT id, group_id, user_id, epoch, encrypted_content, encoding
             FROM encrypted_group_states
             WHERE user_id = $1
             "#,
@@ -94,7 +91,6 @@ impl GroupStore for PostgresGroupStore {
                 user_id: r.user_id,
                 epoch: r.epoch,
                 encrypted_content: r.encrypted_content,
-                media_type: r.media_type,
                 encoding: r.encoding,
             })
             .collect())

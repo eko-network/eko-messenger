@@ -64,6 +64,5 @@ pub struct StoredGroupState {
     pub user_id: String,
     pub epoch: i64,
     pub encrypted_content: Vec<u8>,
-    pub media_type: String,
     pub encoding: String,
 }

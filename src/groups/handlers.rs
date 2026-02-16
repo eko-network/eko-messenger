@@ -28,7 +28,6 @@ pub struct GroupStateResponse {
     pub group_id: Uuid,
     pub epoch: i64,
     pub encrypted_content: Vec<u8>,
-    pub media_type: String,
     pub encoding: String,
 }
 
@@ -39,7 +38,6 @@ impl From<StoredGroupState> for GroupStateResponse {
             group_id: s.group_id,
             epoch: s.epoch,
             encrypted_content: s.encrypted_content,
-            media_type: s.media_type,
             encoding: s.encoding,
         }
     }
