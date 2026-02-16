@@ -23,14 +23,13 @@ pub async fn actor_handler(
     let mut actor = state.auth.provider.person_from_uid(&uid).await?;
 
     // If a valid Bearer token is present and belongs to this actor, attach private endpoints
-    if let Some(TypedHeader(auth)) = auth_header {
-        if let Ok(claims) = state.auth.verify_access_token(auth.token()) {
-            if claims.sub == uid {
-                actor.endpoints = Some(Endpoints {
-                    groups: format!("{}/users/{}/groups", state.domain, uid),
-                });
-            }
-        }
+    if let Some(TypedHeader(auth)) = auth_header
+        && let Ok(claims) = state.auth.verify_access_token(auth.token())
+        && claims.sub == uid
+    {
+        actor.endpoints = Some(Endpoints {
+            groups: format!("{}/users/{}/groups", state.domain, uid),
+        });
     }
 
     Ok(Json(actor))
