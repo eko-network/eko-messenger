@@ -511,6 +511,14 @@ Servers MUST NOT:
 - Modify contents
 - Enforce access control
 - Infer membership
+
+##### C2S Group State API for eko-messenger
+`EncryptedGroupState` management is a private, non-federated concern between a client and its home server. Thus, this is left as an implementation detail.
+
+Because the server is blind to group semantics, group state storage uses only REST endpoints rather than ActivityPub activities. Group control messages (`GroupCreate`, `GroupMemberAdd`, `GroupMemberRemove`, `GroupKeyRotate`) are separate, encrypted content delivered inside `SignalEnvelope`s through the normal outbox/inbox activities.
+
+All group state endpoints require authentication. Clients MUST only access their own group state.
+
 #### Group State Authentication
 All group control objects MUST be authenticated using a Group Signing Key derived from the previous Group State.
 
