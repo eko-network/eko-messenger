@@ -8,6 +8,6 @@ pub use handlers::{
 };
 
 pub use types::{
-    Activity, Create, Delivered, EncryptedMessage, EncryptedMessageEntry, OrderedCollection,
-    Person, PreKeyBundle, Take, actor_uid, actor_url, create_person,
+    Activity, Create, Delivered, EncryptedMessage, EncryptedMessageEntry, Endpoints,
+    OrderedCollection, Person, PreKeyBundle, Take, actor_uid, actor_url, create_person,
 };
