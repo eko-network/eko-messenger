@@ -1,25 +1,65 @@
+pub mod jwt;
+pub mod session;
+
+#[cfg(all(feature = "auth-firebase", feature = "auth-oidc"))]
+compile_error!("Cannot enable both 'auth-firebase' and 'auth-oidc' features");
+#[cfg(not(any(feature = "auth-firebase", feature = "auth-oidc")))]
+compile_error!("Must enable exactly one auth provider: 'auth-firebase' or 'auth-oidc'");
+
+use crate::{activitypub::Person, errors::AppError};
+use async_trait::async_trait;
+use std::sync::Arc;
+
+#[async_trait]
+pub trait IdentityProvider: Send + Sync {
+    async fn person_from_uid(&self, uid: &str) -> Result<Person, AppError>;
+    async fn uid_from_username(&self, username: &str) -> Result<String, AppError>;
+}
+
 #[cfg(feature = "auth-firebase")]
 pub mod firebase;
-pub mod handlers;
-pub mod jwt;
-pub mod provider;
+#[cfg(feature = "auth-firebase")]
+pub use firebase::Firebase;
 
 #[cfg(feature = "auth-oidc")]
 pub mod oidc;
-
-#[cfg(feature = "auth-firebase")]
-pub use firebase::FirebaseAuth;
-pub use handlers::{
-    Auth, IdentityProvider, LoginRequest, LoginResponse, PreKey, REFRESH_EXPIRATION,
-    RefreshRequest, RefreshResponse, SignedPreKey, SignupRequest, login_handler, logout_handler,
-    refresh_token_handler, signup_handler,
-};
-pub use jwt::{Claims, JwtHelper};
-
-pub use provider::{OidcProviderState, add_oidc_routes, build_auth};
-
 #[cfg(feature = "auth-oidc")]
-pub use oidc::{
-    OidcConfig, OidcIdentityProvider, OidcProvider, oidc_callback_handler, oidc_complete_handler,
-    oidc_login_handler,
+pub use oidc::Oidc;
+
+#[derive(Clone)]
+pub enum AuthProvider {
+    #[cfg(feature = "auth-firebase")]
+    Firebase(Arc<firebase::Firebase>),
+    #[cfg(feature = "auth-oidc")]
+    Oidc(Arc<oidc::Oidc>),
+}
+
+impl AuthProvider {
+    #[cfg(feature = "auth-firebase")]
+    pub fn as_firebase(&self) -> &Arc<firebase::Firebase> {
+        match self {
+            Self::Firebase(fb) => fb,
+            #[cfg(feature = "auth-oidc")]
+            _ => unreachable!("Called as_firebase() on non-Firebase provider"),
+        }
+    }
+
+    #[cfg(feature = "auth-oidc")]
+    pub fn as_oidc(&self) -> &Arc<oidc::Oidc> {
+        match self {
+            Self::Oidc(o) => o,
+            #[cfg(feature = "auth-firebase")]
+            _ => unreachable!("Called as_oidc() on non-OIDC provider"),
+        }
+    }
+}
+
+// Shared types and utilities
+pub mod types;
+pub use types::{
+    LoginRequest, LoginResponse, LogoutRequest, PreKey, RefreshRequest, RefreshResponse,
+    SignedPreKey,
 };
+
+pub use jwt::{Claims, JwtHelper};
+pub use session::SessionManager;
