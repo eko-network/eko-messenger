@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub fn default_context_value() -> Value {
-    Value::String(super::ACTIVITY_STREAMS_CONTEXT.to_string())
-}
+use crate::server::context;
 
 /// ActivityPub Actor endpoints
 /// Contains additional endpoints which may be useful for this actor
@@ -50,7 +48,7 @@ pub fn create_person(
     let devices_url = format!("{}/deviceActions", id);
 
     Person {
-        context: default_context_value(),
+        context: context(),
         type_field: "Person".to_string(),
         id,
         inbox: inbox_url,

@@ -1,6 +1,6 @@
-use crate::activitypub::ACTIVITY_STREAMS_CONTEXT;
-use crate::activitypub::types::{proof_condensor, single_item_vec, single_item_vec_borrowed};
 use crate::devices::DeviceId;
+use crate::server::context;
+use crate::types::{proof_condensor, single_item_vec, single_item_vec_borrowed};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::base64::Base64;
@@ -78,7 +78,7 @@ pub struct Device {
 impl Device {
     pub fn new(id: String, did: DeviceId, key_collection: String, public_key: Vec<u8>) -> Self {
         Device {
-            context: Value::String(ACTIVITY_STREAMS_CONTEXT.to_string()),
+            context: context(),
             type_field: "Device".to_string(),
             id,
             did,

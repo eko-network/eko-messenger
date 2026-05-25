@@ -1,13 +1,13 @@
 use crate::{
-    activitypub::{
-        Activity, Create,
-        types::eko_types::{Device, KeyPackage},
-    },
     devices::DeviceId,
     errors::AppError,
     storage::models::{
         DeviceRegistration, RegisterDeviceResult, RotatedRefreshToken, StoredDevice,
         StoredGroupState,
+    },
+    types::{
+        Activity, Create,
+        eko_types::{Device, KeyPackage},
     },
 };
 use async_trait::async_trait;
@@ -54,7 +54,7 @@ pub trait OutboxStore: Send + Sync {}
 #[async_trait]
 pub trait DeviceStore: Send + Sync {
     async fn list_devices_for_user(&self, uid: &str) -> Result<Vec<StoredDevice>, AppError>;
-    async fn take_key_package(&self, did: &str) -> Result<KeyPackage, AppError>;
+    async fn take_key_package(&self, did: DeviceId) -> Result<KeyPackage, AppError>;
 }
 
 #[async_trait]

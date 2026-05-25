@@ -49,7 +49,7 @@ pub mod single_item_vec_borrowed {
 /// implementation only cares about one signature and all signatures must be valid so taking the
 /// first one is a valid approach.
 pub mod proof_condensor {
-    use crate::activitypub::types::eko_types::DataIntegrityProof;
+    use crate::types::eko_types::DataIntegrityProof;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     /// Custom deserializer for proof field that accepts either a single object or a list

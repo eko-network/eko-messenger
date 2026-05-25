@@ -1,11 +1,13 @@
-use crate::activitypub::types::ACTIVITY_STREAMS_CONTEXT;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::server::context;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderedCollection<T> {
     #[serde(rename = "@context")]
-    pub context: String,
+    pub context: Value,
     #[serde(rename = "type")]
     pub type_field: String,
     pub id: String,
@@ -19,7 +21,7 @@ impl<T> OrderedCollection<T> {
         // TODO probably should be ordered by sent time or smth
         let total = items.as_ref().map_or(0, |v| v.len());
         Self {
-            context: ACTIVITY_STREAMS_CONTEXT.to_string(),
+            context: context(),
             type_field: "OrderedCollection".to_string(),
             id,
             total_items: total,
@@ -32,7 +34,7 @@ impl<T> OrderedCollection<T> {
 #[serde(rename_all = "camelCase")]
 pub struct Collection<T> {
     #[serde(rename = "@context")]
-    pub context: String,
+    pub context: Value,
     #[serde(rename = "type")]
     pub type_field: String, // Will be "Collection"
     pub id: String,
@@ -45,7 +47,7 @@ impl<T> Collection<T> {
     pub fn new(id: String, items: Option<Vec<T>>) -> Self {
         let total = items.as_ref().map_or(0, |v| v.len());
         Self {
-            context: ACTIVITY_STREAMS_CONTEXT.to_string(),
+            context: context(),
             type_field: "Collection".to_string(),
             id,
             total_items: total,
