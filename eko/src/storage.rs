@@ -4,6 +4,7 @@ use eko_messenger::{
     devices::DeviceId,
     errors::AppError,
     storage::{DeviceStore, models::StoredDevice},
+    types::KeyPackage,
 };
 use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
@@ -44,5 +45,19 @@ impl DeviceStore for Storage {
                 public_key: v.signer_public_key,
             })
             .collect())
+    }
+    async fn take_key_package(&self, did: DeviceId) -> Result<Vec<u8>, AppError> {
+        let result = sqlx::query_scalar!(
+            r#"
+            SELECT public.take_key_package($1)
+            "#,
+            did.as_uuid()
+        )
+        .fetch_one(&self.spool)
+        .await?
+        .ok_or(AppError::NotFound(
+            "Device does not exist or no keys available".to_string(),
+        ))?;
+        Ok(result)
     }
 }

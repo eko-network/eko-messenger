@@ -58,7 +58,16 @@ pub struct KeyPackage {
     #[serde_as(as = "Base64")]
     pub key: Vec<u8>,
 }
-
+impl KeyPackage {
+    pub fn new(did: DeviceId, key: Vec<u8>) -> Self {
+        Self {
+            context: context(),
+            type_field: "KeyPackage".to_string(),
+            did,
+            key,
+        }
+    }
+}
 /// Represents a Device in the Eko protocol
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
