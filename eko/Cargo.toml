@@ -1,0 +1,17 @@
+[package]
+name = "eko"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "eko"
+path = "src/main.rs"
+
+[dependencies]
+eko-messenger = { path = "../eko-messenger" }
+async-trait = "0.1.89"
+axum = { version = "0.8.6", features = ["macros"] }
+tokio = { version = "1.48.0", features = ["full"] }
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+uuid = { version = "1.18.1", features = ["v4"] }

@@ -1,0 +1,139 @@
+use crate::{
+    activitypub::{Activity, Create, types::eko_types::Device, types::eko_types::KeyBundle},
+    devices::DeviceId,
+    errors::AppError,
+    storage::models::{
+        DeviceRegistration, RegisterDeviceResult, RotatedRefreshToken, StoredGroupState,
+    },
+};
+use async_trait::async_trait;
+use uuid::Uuid;
+
+#[async_trait]
+pub trait ActivityStore: Send + Sync {
+    /// Returns all of the activities in an actors inbox for a specific device. This has side
+    /// affects for `Delivered` and `Take` causing their corresponding deliver requests to be
+    /// removed
+    async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
+
+    /// Stores a create this should mark the message as needing delivery for all devices in the
+    async fn insert_create(&self, create: &Create) -> Result<(), AppError>;
+    /// Stores an Activity. If the activity is a deliver it will have a side affect of removing
+    /// related message entries.
+    async fn insert_non_create(
+        &self,
+        activity: &Activity,
+        dids: &[DeviceId],
+    ) -> Result<(), AppError>;
+
+    /// Deletes a delivery request for a specific activity and device.
+    /// This will trigger cleanup of the activity and message entries if no other deliveries exist.
+    /// Returns true if the activity existed, false if it didn't
+    async fn delete_delivery(&self, activity_id: &str, did: &DeviceId) -> Result<bool, AppError>;
+
+    /// Deletes delivery requests for multiple activities for a specific device.
+    /// This is more efficient than calling delete_delivery multiple times.
+    /// Returns the number of deliveries deleted.
+    async fn delete_deliveries(
+        &self,
+        activity_ids: &[String],
+        did: &DeviceId,
+    ) -> Result<u64, AppError>;
+
+    /// Checks if this is the first delivery for a given Create activity.
+    async fn claim_first_delivery(&self, create_id: &str) -> Result<bool, AppError>;
+}
+
+#[async_trait]
+pub trait OutboxStore: Send + Sync {}
+
+#[async_trait]
+pub trait DeviceStore: Send + Sync {
+    async fn list_devices_for_user(&self, uid: &str) -> Result<Vec<Device>, AppError>;
+}
+
+#[async_trait]
+pub trait ActorStore: Send + Sync {
+    /// Upsert a local actor
+    async fn upsert_local_actor(
+        &self,
+        actor_id: &str,
+        inbox_url: &str,
+        outbox_url: &str,
+    ) -> Result<(), AppError>;
+
+    /// Returns true if the actor exists and is local
+    async fn is_local_actor(&self, actor_id: &str) -> Result<bool, AppError>;
+}
+
+#[async_trait]
+pub trait NotificationStore: Send + Sync {
+    async fn upsert_endpoint(
+        &self,
+        did: DeviceId,
+        endpoint: &web_push::SubscriptionInfo,
+    ) -> Result<(), AppError>;
+    async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError>;
+    async fn retrive_endpoint(
+        &self,
+        dids: DeviceId,
+    ) -> Option<(web_push::SubscriptionInfo, DeviceId)>;
+}
+
+#[async_trait]
+pub trait UserStore: Send + Sync {
+    async fn get_user_by_email(
+        &self,
+        email: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+
+    async fn get_user_by_uid(
+        &self,
+        uid: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+
+    async fn get_user_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+
+    async fn get_user_by_oidc(
+        &self,
+        oidc_issuer: &str,
+        oidc_sub: &str,
+    ) -> Result<Option<crate::storage::models::StoredUser>, AppError>;
+
+    async fn create_oidc_user(
+        &self,
+        uid: &str,
+        username: &str,
+        email: &str,
+        oidc_issuer: &str,
+        oidc_sub: &str,
+    ) -> Result<(), AppError>;
+}
+
+#[async_trait]
+pub trait GroupStore: Send + Sync {
+    /// Upsert encrypted group state. Replaces existing state only if epoch is higher.
+    /// Returns true if the state was inserted/updated, false if the epoch was stale.
+    async fn upsert_group_state(&self, state: &StoredGroupState) -> Result<bool, AppError>;
+
+    /// Get a single encrypted group state by group_id for a user.
+    async fn get_group_state(
+        &self,
+        user_id: &str,
+        group_id: &Uuid,
+    ) -> Result<Option<StoredGroupState>, AppError>;
+
+    /// List all encrypted group states for a user.
+    async fn get_all_group_states(&self, user_id: &str) -> Result<Vec<StoredGroupState>, AppError>;
+
+    /// Delete an encrypted group state. Returns true if a row was deleted.
+    async fn delete_group_state(&self, user_id: &str, group_id: &Uuid) -> Result<bool, AppError>;
+}
+
+/// Full messenger storage — implement all sub-traits on your backend type.
+pub trait Storage: Send + Sync + ActivityStore + DeviceStore {}
+
+impl<T> Storage for T where T: ActivityStore + DeviceStore + Send + Sync {}

@@ -8,8 +8,6 @@ pkgs.mkShell {
     pkg-config
     openssl
     sqlx-cli
-    podman-compose
-    docker-compose
   ];
 
   shellHook = ''
