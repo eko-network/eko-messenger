@@ -54,7 +54,7 @@ pub trait OutboxStore: Send + Sync {}
 #[async_trait]
 pub trait DeviceStore: Send + Sync {
     async fn list_devices_for_user(&self, uid: &str) -> Result<Vec<StoredDevice>, AppError>;
-    async fn take_key_package(&self, did: DeviceId) -> Result<KeyPackage, AppError>;
+    async fn take_key_package(&self, did: DeviceId) -> Result<Vec<u8>, AppError>;
 }
 
 #[async_trait]

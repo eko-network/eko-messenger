@@ -9,8 +9,9 @@ use axum::{
 use tracing::info;
 
 use crate::{
-    Activity, AppError, DeviceId, MessengerContext, RequestAuth, server::DEVICE_KEYS_ENDPOINT,
-    types::actor_uid,
+    Activity, AppError, DeviceId, MessengerContext, RequestAuth,
+    server::DEVICE_KEYS_ENDPOINT,
+    types::{KeyPackage, actor_uid},
 };
 
 #[debug_handler]
@@ -62,8 +63,9 @@ pub async fn post_to_outbox(
 
         let device_url = take.to.trim_end_matches(DEVICE_KEYS_ENDPOINT);
         let target_did = DeviceId::from_url(device_url)?;
-        let bundle = ctx.storage.take_key_package(target_did).await?;
-        take.result = Some(bundle);
+        let bytes = ctx.storage.take_key_package(target_did).await?;
+        let package = KeyPackage::new(target_did, bytes);
+        take.result = Some(package);
     }
     Ok((StatusCode::CREATED, Json(payload)).into_response())
     //
