@@ -8,26 +8,6 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 #[serde_as]
-#[derive(Clone, Deserialize, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PreKey {
-    pub id: i32,
-    #[serde_as(as = "Base64")]
-    pub key: Vec<u8>,
-}
-
-#[serde_as]
-#[derive(Clone, Deserialize, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedPreKey {
-    pub id: i32,
-    #[serde_as(as = "Base64")]
-    pub key: Vec<u8>,
-    #[serde_as(as = "Base64")]
-    pub signature: Vec<u8>,
-}
-
-#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceRegistration {
@@ -35,8 +15,6 @@ pub struct DeviceRegistration {
     #[serde_as(as = "Base64")]
     pub identity_key: Vec<u8>,
     pub registration_id: i32,
-    pub pre_keys: Vec<PreKey>,
-    pub signed_pre_key: SignedPreKey,
     pub user_agent: String,
 }
 
@@ -80,6 +58,11 @@ pub struct RotatedRefreshToken {
     pub expires_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoredDevice {
+    pub did: DeviceId,
+    pub public_key: Vec<u8>,
+}
 #[derive(Debug, Clone)]
 pub struct StoredUser {
     pub uid: String,

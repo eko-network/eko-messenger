@@ -1,5 +1,5 @@
 mod config;
-mod dummy;
+mod storage;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -11,18 +11,19 @@ use axum::{
     response::Html,
     routing::get,
 };
-use dummy::DummyStorage;
 use eko_messenger::{
     MessengerContext, RequestAuth, devices::DeviceId, protocol_routes, public_routes,
 };
+use storage::Storage;
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::storage::pg_init;
 
-/// Stand-in auth until real middleware exists in the library.
+/// Stand-in auth
 async fn stub_auth(mut req: Request, next: Next) -> Response {
     req.extensions_mut().insert(RequestAuth {
         uid: "stub-user".into(),
@@ -50,11 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = cfg.get_addr()?;
     let ctx = MessengerContext {
         domain: Arc::new(cfg.domain),
-        storage: Arc::new(DummyStorage),
+        storage: Arc::new(Storage::new(pg_init(&cfg.supabase_db_url)?)),
     };
 
     info!("eko listening on http://{addr}");
-    info!("try GET http://{addr}/users/stub-user/inbox");
 
     let listener = TcpListener::bind(addr).await?;
     axum::serve(listener, app(ctx)).await?;

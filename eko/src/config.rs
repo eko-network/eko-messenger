@@ -3,10 +3,13 @@ use std::{
     net::{AddrParseError, SocketAddr},
 };
 
+const DEFAULT_SUPABASE_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+
 pub struct Config {
     pub port: u16,
     pub domain: String,
     pub listen_addr: String,
+    pub supabase_db_url: String,
 }
 
 impl Config {
@@ -17,10 +20,13 @@ impl Config {
             .expect("PORT environment variable must be a valid u16 integer");
         let domain = env::var("DOMAIN").unwrap_or_else(|_| format!("http://127.0.0.1:{port}"));
         let listen_addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0".into());
+        let supabase_db_url =
+            env::var("SUPABASE_DB_URL").unwrap_or_else(|_| DEFAULT_SUPABASE_DB_URL.into());
         Self {
             port,
             domain,
             listen_addr,
+            supabase_db_url,
         }
     }
 

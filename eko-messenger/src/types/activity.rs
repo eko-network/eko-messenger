@@ -1,11 +1,10 @@
-use crate::activitypub::types::eko_types::EncryptedMessageView;
-use crate::activitypub::types::single_item_vec;
-use crate::activitypub::types::single_item_vec_borrowed;
+use crate::types::KeyPackage;
+use crate::types::eko_types::EncryptedMessageView;
+use crate::types::single_item_vec;
+use crate::types::single_item_vec_borrowed;
 use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
-
-use crate::activitypub::KeyBundle;
 
 use super::eko_types::EncryptedMessage;
 
@@ -68,7 +67,7 @@ pub struct Take {
     #[serde(default)]
     pub id: Option<String>,
     #[serde(default)]
-    pub result: Option<KeyBundle>,
+    pub result: Option<KeyPackage>,
 }
 
 #[derive(Deserialize, Debug, Serialize)]

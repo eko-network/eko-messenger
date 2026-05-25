@@ -1,10 +1,13 @@
 mod handlers;
 use std::sync::Arc;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use handlers::get_devices;
 
-use crate::storage::Storage;
+use crate::{server::handlers::post_to_outbox, storage::Storage};
 // ---------------------------------------------------------------------------
 // Context — protocol services shared by all handlers
 // ---------------------------------------------------------------------------
@@ -26,7 +29,9 @@ pub struct RequestAuth {
 }
 
 pub fn protocol_routes() -> Router<MessengerContext> {
-    Router::new().route("/users/{uid}/devices", get(get_devices))
+    Router::new()
+        .route("/users/{uid}/devices", get(get_devices))
+        .route("/users/{uid}/outbox", post(post_to_outbox))
 }
 
 pub fn public_routes() -> Router<MessengerContext> {
