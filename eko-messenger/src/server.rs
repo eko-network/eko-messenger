@@ -8,7 +8,10 @@ use axum::{
 use handlers::get_devices;
 use serde_json::{Map, Value};
 
-use crate::{server::handlers::post_to_outbox, storage::Storage};
+use crate::{
+    server::handlers::{capabilities_handler, post_to_outbox},
+    storage::Storage,
+};
 pub const ACTIVITY_STREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 pub const ECP_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
@@ -42,7 +45,7 @@ pub fn protocol_routes() -> Router<MessengerContext> {
 }
 
 pub fn public_routes() -> Router<MessengerContext> {
-    Router::new()
+    Router::new().route("/.well-known/ecp", get(capabilities_handler))
 }
 
 pub fn context() -> Value {
