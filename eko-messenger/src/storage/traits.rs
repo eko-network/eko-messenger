@@ -1,9 +1,13 @@
 use crate::{
-    activitypub::{Activity, Create, types::eko_types::Device, types::eko_types::KeyBundle},
+    activitypub::{
+        Activity, Create,
+        types::eko_types::{Device, KeyPackage},
+    },
     devices::DeviceId,
     errors::AppError,
     storage::models::{
-        DeviceRegistration, RegisterDeviceResult, RotatedRefreshToken, StoredGroupState,
+        DeviceRegistration, RegisterDeviceResult, RotatedRefreshToken, StoredDevice,
+        StoredGroupState,
     },
 };
 use async_trait::async_trait;
@@ -49,7 +53,8 @@ pub trait OutboxStore: Send + Sync {}
 
 #[async_trait]
 pub trait DeviceStore: Send + Sync {
-    async fn list_devices_for_user(&self, uid: &str) -> Result<Vec<Device>, AppError>;
+    async fn list_devices_for_user(&self, uid: &str) -> Result<Vec<StoredDevice>, AppError>;
+    async fn take_key_package(&self, did: &str) -> Result<KeyPackage, AppError>;
 }
 
 #[async_trait]
@@ -66,19 +71,19 @@ pub trait ActorStore: Send + Sync {
     async fn is_local_actor(&self, actor_id: &str) -> Result<bool, AppError>;
 }
 
-#[async_trait]
-pub trait NotificationStore: Send + Sync {
-    async fn upsert_endpoint(
-        &self,
-        did: DeviceId,
-        endpoint: &web_push::SubscriptionInfo,
-    ) -> Result<(), AppError>;
-    async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError>;
-    async fn retrive_endpoint(
-        &self,
-        dids: DeviceId,
-    ) -> Option<(web_push::SubscriptionInfo, DeviceId)>;
-}
+// #[async_trait]
+// pub trait NotificationStore: Send + Sync {
+//     async fn upsert_endpoint(
+//         &self,
+//         did: DeviceId,
+//         endpoint: &web_push::SubscriptionInfo,
+//     ) -> Result<(), AppError>;
+//     async fn delete_endpoint(&self, did: DeviceId) -> Result<(), AppError>;
+//     async fn retrive_endpoint(
+//         &self,
+//         dids: DeviceId,
+//     ) -> Option<(web_push::SubscriptionInfo, DeviceId)>;
+// }
 
 #[async_trait]
 pub trait UserStore: Send + Sync {
@@ -134,6 +139,6 @@ pub trait GroupStore: Send + Sync {
 }
 
 /// Full messenger storage — implement all sub-traits on your backend type.
-pub trait Storage: Send + Sync + ActivityStore + DeviceStore {}
+pub trait Storage: Send + Sync + DeviceStore {}
 
-impl<T> Storage for T where T: ActivityStore + DeviceStore + Send + Sync {}
+impl<T> Storage for T where T: DeviceStore + Send + Sync {}

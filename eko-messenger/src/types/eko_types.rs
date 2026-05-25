@@ -1,3 +1,4 @@
+use crate::activitypub::ACTIVITY_STREAMS_CONTEXT;
 use crate::activitypub::types::{proof_condensor, single_item_vec, single_item_vec_borrowed};
 use crate::devices::DeviceId;
 use serde::{Deserialize, Serialize};
@@ -47,7 +48,7 @@ pub struct DataIntegrityProof {
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KeyBundle {
+pub struct KeyPackage {
     #[serde(rename = "@context")]
     pub context: Value,
     #[serde(rename = "type")]
@@ -72,6 +73,19 @@ pub struct Device {
     pub key_collection: String,
     #[serde_as(as = "Base64")]
     pub public_key: Vec<u8>,
+}
+
+impl Device {
+    pub fn new(id: String, did: DeviceId, key_collection: String, public_key: Vec<u8>) -> Self {
+        Device {
+            context: Value::String(ACTIVITY_STREAMS_CONTEXT.to_string()),
+            type_field: "Device".to_string(),
+            id,
+            did,
+            key_collection,
+            public_key,
+        }
+    }
 }
 
 #[derive(Serialize)]
