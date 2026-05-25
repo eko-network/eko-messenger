@@ -6,9 +6,9 @@ use axum::{
 use url::Url;
 
 use crate::{
-    activitypub::{collection::Collection, eko_types::Device},
     errors::AppError,
-    server::MessengerContext,
+    server::{DEVICE_KEYS_ENDPOINT, MessengerContext},
+    types::{collection::Collection, eko_types::Device},
 };
 
 #[debug_handler]
@@ -25,7 +25,7 @@ pub async fn get_devices(
         .into_iter()
         .map(|v| {
             let id = path.join(&v.did.to_string())?;
-            let collection = id.join("keyCollection")?;
+            let collection = id.join(DEVICE_KEYS_ENDPOINT)?;
             Ok(Device::new(
                 id.to_string(),
                 v.did,
