@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{
     Extension, Json, debug_handler,
     extract::{Path, State},
@@ -18,7 +16,7 @@ use crate::{
 pub async fn post_to_outbox(
     State(ctx): State<MessengerContext>,
     Path(uid): Path<String>,
-    Extension(claims): Extension<Arc<RequestAuth>>,
+    Extension(claims): Extension<RequestAuth>,
     Json(mut payload): Json<Activity>,
 ) -> Result<impl IntoResponse, AppError> {
     // Verify the authenticated user matches the outbox owner
