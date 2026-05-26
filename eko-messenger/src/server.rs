@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
 };
 use handlers::get_devices;
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::{
@@ -32,7 +33,7 @@ pub struct MessengerContext {
 // Per-request identity — injected by YOUR auth middleware
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct RequestAuth {
     pub uid: String,
     pub did: crate::devices::DeviceId,

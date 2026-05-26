@@ -1,13 +1,12 @@
 use axum::{
     Json, debug_handler,
-    extract::MatchedPath,
     extract::{Path, State},
 };
 use url::Url;
 
 use crate::{
     errors::AppError,
-    server::{DEVICE_KEYS_ENDPOINT, MessengerContext},
+    server::{DEVICE_KEYS_ENDPOINT, USERS_ENDPOINT, DEVICE_ENDPOINT, MessengerContext},
     types::{collection::Collection, eko_types::Device},
 };
 
@@ -15,9 +14,9 @@ use crate::{
 pub async fn get_devices(
     State(ctx): State<MessengerContext>,
     Path(uid): Path<String>,
-    path: MatchedPath,
 ) -> Result<Json<Collection<Device>>, AppError> {
-    let path = Url::parse(path.as_str())?;
+    let base = Url::parse(&ctx.domain)?;
+    let path = base.join(&format!("{USERS_ENDPOINT}/{uid}/{DEVICE_ENDPOINT}"))?;
     let fetched_items: Vec<Device> = ctx
         .storage
         .list_devices_for_user(&uid)
