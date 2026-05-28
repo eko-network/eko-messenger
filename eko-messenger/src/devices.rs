@@ -31,6 +31,7 @@ impl DeviceId {
     /// Parse from public URL
     pub fn from_url(url: &str) -> Result<Self, AppError> {
         let uuid_str = url
+            .trim_end_matches('/')
             .rsplit_once('/')
             .map(|(_, id)| id)
             .ok_or(anyhow!("Invalid device URL format"))?;

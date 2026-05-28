@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     Activity, AppError, DeviceId, MessengerContext, RequestAuth,
@@ -19,6 +19,7 @@ pub async fn post_to_outbox(
     Extension(claims): Extension<RequestAuth>,
     Json(mut payload): Json<Activity>,
 ) -> Result<impl IntoResponse, AppError> {
+    debug!("{:?}", payload);
     // Verify the authenticated user matches the outbox owner
     if claims.uid != uid {
         return Err(AppError::Forbidden(
@@ -59,7 +60,10 @@ pub async fn post_to_outbox(
             return Err(AppError::BadRequest("Invalid target URL".into()));
         }
 
-        let device_url = take.to.trim_end_matches(DEVICE_KEYS_ENDPOINT);
+        let device_url = take
+            .to
+            .strip_suffix(&format!("/{DEVICE_KEYS_ENDPOINT}"))
+            .unwrap_or(&take.to);
         let target_did = DeviceId::from_url(device_url)?;
         let bytes = ctx.storage.take_key_package(target_did).await?;
         let package = KeyPackage::new(target_did, bytes);
