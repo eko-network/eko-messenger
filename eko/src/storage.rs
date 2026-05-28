@@ -4,7 +4,6 @@ use eko_messenger::{
     devices::DeviceId,
     errors::AppError,
     storage::{DeviceStore, models::StoredDevice},
-    types::KeyPackage,
 };
 use sqlx::{PgPool, Postgres};
 use uuid::Uuid;

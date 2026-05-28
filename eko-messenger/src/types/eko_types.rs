@@ -1,10 +1,10 @@
 use crate::devices::DeviceId;
 use crate::server::context;
-use crate::types::{proof_condensor, single_item_vec, single_item_vec_borrowed};
+use crate::types::{single_item_vec, single_item_vec_borrowed};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::base64::Base64;
-use serde_with::{hex::Hex, serde_as};
+use serde_with::serde_as;
 
 /// Represents an encrypted message in the Eko protocol
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -32,18 +32,6 @@ pub struct EncryptedMessageEntry {
     pub content: Vec<u8>,
 }
 
-/// Data Integrity Proof
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct DataIntegrityProof {
-    #[serde(rename = "type")]
-    pub type_field: String,
-    pub cryptosuite: String,
-    pub verification_method: String,
-    pub proof_purpose: String,
-    pub proof_value: String,
-}
-
 /// Key bundle for establishing encrypted sessions
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
@@ -58,6 +46,7 @@ pub struct KeyPackage {
     #[serde_as(as = "Base64")]
     pub key: Vec<u8>,
 }
+
 impl KeyPackage {
     pub fn new(did: DeviceId, key: Vec<u8>) -> Self {
         Self {
