@@ -9,7 +9,7 @@ use tracing::{debug, info};
 use crate::{
     Activity, AppError, DeviceId, MessengerContext, RequestAuth,
     server::DEVICE_KEYS_ENDPOINT,
-    types::{KeyPackage, actor_uid},
+    types::{KeyPackage, activities::ActivityBase, actor_uid},
 };
 
 #[debug_handler]
@@ -28,12 +28,12 @@ pub async fn post_to_outbox(
     }
 
     // // Extract the UID from the actor URL and compare with the authenticated user
-    let extracted_actor_uid = actor_uid(payload.as_base().actor())?;
+    let extracted_actor_uid = actor_uid(payload.actor())?;
     if claims.uid != extracted_actor_uid {
         info!(
             "Stopped {} from sending a message as {}",
             claims.uid,
-            payload.as_base().actor()
+            payload.actor()
         );
         return Err(AppError::Forbidden(
             "Messages may not be sent on behalf of other users".into(),
@@ -56,14 +56,19 @@ pub async fn post_to_outbox(
     // payload.as_base_mut().set_id(activity_id);
     //
     if let Activity::Take(take) = &mut payload {
-        if !take.to.ends_with(DEVICE_KEYS_ENDPOINT) {
+        let to = take.to();
+        if to.len() != 1 {
+            // FIXME redo this
+            todo!()
+        }
+        let to = to.first().unwrap().to_string();
+        if !to.ends_with(DEVICE_KEYS_ENDPOINT) {
             return Err(AppError::BadRequest("Invalid target URL".into()));
         }
 
-        let device_url = take
-            .to
+        let device_url = to
             .strip_suffix(&format!("/{DEVICE_KEYS_ENDPOINT}"))
-            .unwrap_or(&take.to);
+            .unwrap_or(&to);
         let target_did = DeviceId::from_url(device_url)?;
         let bytes = ctx.storage.take_key_package(target_did).await?;
         let package = KeyPackage::new(target_did, bytes);
