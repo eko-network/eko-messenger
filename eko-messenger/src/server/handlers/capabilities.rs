@@ -1,10 +1,8 @@
-use axum::{Json, extract::State};
+use axum::Json;
 use serde::Serialize;
 
-use crate::MessengerContext;
-
-pub const SOCKET_URL: &str = "/ws";
-pub const NOTIF_URL: &str = "/push";
+// pub const SOCKET_URL: &str = "/ws";
+// pub const NOTIF_URL: &str = "/push";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,9 +42,7 @@ pub struct WebPushEndpoints {
     revoke: String,
 }
 
-pub async fn capabilities_handler(
-    State(ctx): State<MessengerContext>,
-) -> Json<CapabilitiesResponse<'static>> {
+pub async fn capabilities_handler() -> Json<CapabilitiesResponse<'static>> {
     // Derive from domain
     // let ws = ctx
     //     .domain
