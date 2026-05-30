@@ -1,14 +1,8 @@
 use crate::{
     devices::DeviceId,
     errors::AppError,
-    storage::models::{
-        DeviceRegistration, RegisterDeviceResult, RotatedRefreshToken, StoredDevice,
-        StoredGroupState,
-    },
-    types::{
-        Activity, Create,
-        eko_types::{Device, KeyPackage},
-    },
+    storage::models::{StoredDevice, StoredGroupState},
+    types::{Create},
 };
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -18,34 +12,10 @@ pub trait ActivityStore: Send + Sync {
     /// Returns all of the activities in an actors inbox for a specific device. This has side
     /// affects for `Delivered` and `Take` causing their corresponding deliver requests to be
     /// removed
-    async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
-
+    // async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
+    //
     /// Stores a create this should mark the message as needing delivery for all devices in the
-    async fn insert_create(&self, create: &Create) -> Result<(), AppError>;
-    /// Stores an Activity. If the activity is a deliver it will have a side affect of removing
-    /// related message entries.
-    async fn insert_non_create(
-        &self,
-        activity: &Activity,
-        dids: &[DeviceId],
-    ) -> Result<(), AppError>;
-
-    /// Deletes a delivery request for a specific activity and device.
-    /// This will trigger cleanup of the activity and message entries if no other deliveries exist.
-    /// Returns true if the activity existed, false if it didn't
-    async fn delete_delivery(&self, activity_id: &str, did: &DeviceId) -> Result<bool, AppError>;
-
-    /// Deletes delivery requests for multiple activities for a specific device.
-    /// This is more efficient than calling delete_delivery multiple times.
-    /// Returns the number of deliveries deleted.
-    async fn delete_deliveries(
-        &self,
-        activity_ids: &[String],
-        did: &DeviceId,
-    ) -> Result<u64, AppError>;
-
-    /// Checks if this is the first delivery for a given Create activity.
-    async fn claim_first_delivery(&self, create_id: &str) -> Result<bool, AppError>;
+    async fn insert_create(&self, create: &Create, devices: &[DeviceId]) -> Result<(), AppError>;
 }
 
 #[async_trait]
@@ -139,6 +109,6 @@ pub trait GroupStore: Send + Sync {
 }
 
 /// Full messenger storage — implement all sub-traits on your backend type.
-pub trait Storage: Send + Sync + DeviceStore {}
+pub trait Storage: Send + Sync + DeviceStore + ActivityStore {}
 
-impl<T> Storage for T where T: DeviceStore + Send + Sync {}
+impl<T> Storage for T where T: Send + Sync + DeviceStore + ActivityStore {}

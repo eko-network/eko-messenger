@@ -1,0 +1,12 @@
+CREATE TABLE messages (
+  id SERIAL PRIMARY KEY,
+  activity_type TEXT NOT NULL,
+  object JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE entries (
+  id SERIAL PRIMARY KEY,
+  message_id INTEGER REFERENCES messages (id) ON DELETE CASCADE,
+  did UUID NOT NULL
+);

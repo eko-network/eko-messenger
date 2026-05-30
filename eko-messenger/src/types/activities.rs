@@ -54,10 +54,6 @@ pub trait ActivityBase {
     fn to(&self) -> &Vec<String>;
 }
 
-pub trait ActivityBaseMut: ActivityBase {
-    fn set_id(&mut self, id: String);
-}
-
 macro_rules! impl_activity_base {
     ($($t:ty),*) => {$(
         impl ActivityBase for $t {
@@ -95,4 +91,18 @@ impl ActivityBase for Activity {
             Activity::Delivered(v) => v.to(),
         }
     }
+}
+
+impl Activity {
+    pub fn as_mut(&mut self) -> &mut dyn ActivityBaseMut {
+        match self {
+            Activity::Take(v) => v,
+            Activity::Create(v) => v,
+            Activity::Delivered(v) => v,
+        }
+    }
+}
+
+pub trait ActivityBaseMut: ActivityBase {
+    fn set_id(&mut self, id: String);
 }

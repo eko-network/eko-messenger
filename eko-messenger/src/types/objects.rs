@@ -104,3 +104,12 @@ impl ObjectBase for Object {
         }
     }
 }
+
+impl Object {
+    pub fn as_base_mut(&mut self) -> &mut dyn ObjectBaseMut {
+        match self {
+            Object::PrivateMessage(v) => v,
+            Object::WelcomeMessage(v) => v,
+        }
+    }
+}
