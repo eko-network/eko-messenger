@@ -10,6 +10,7 @@ pub struct Config {
     pub domain: String,
     pub listen_addr: String,
     pub supabase_db_url: String,
+    pub db_url: String,
     pub jwt_jwks_url: String,
 }
 
@@ -28,17 +29,16 @@ impl Config {
             .expect("PORT environment variable must be a valid u16 integer");
         let domain = get_from_env("DOMAIN", &format!("http://127.0.0.1:{port}"));
         let listen_addr = get_from_env("LISTEN_ADDR", "0.0.0.0");
-        let supabase_db_url = get_from_env(
-            "SUPABASE_DB_URL",
-            "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
-        );
+        let supabase_db_url = env::var("SUPABASE_DB_URL").expect("SUPABASE_DB_URL must be set");
         let jwt_jwks_url = env::var("JWT_JWKS_URL").expect("JWT_JWKS_URL must be set");
+        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         Self {
             port,
             domain,
             listen_addr,
             supabase_db_url,
             jwt_jwks_url,
+            db_url,
         }
     }
 

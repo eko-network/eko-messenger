@@ -22,7 +22,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::jwt::JWTVerifier;
-use crate::storage::pg_init;
+use crate::storage::{pg_init, pg_init_with_migration};
 
 async fn auth(Extension(jwt): Extension<JWTVerifier>, mut req: Request, next: Next) -> Response {
     if let Some(auth) = req
@@ -72,7 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let domain = Arc::new(cfg.domain);
     let ctx = MessengerContext {
         domain: domain.clone(),
-        storage: Arc::new(Storage::new(pg_init(&cfg.supabase_db_url)?)),
+        storage: Arc::new(Storage::new(
+            pg_init(&cfg.supabase_db_url)?,
+            pg_init_with_migration(&cfg.db_url).await?,
+        )),
     };
 
     info!("eko listening on {}", domain);

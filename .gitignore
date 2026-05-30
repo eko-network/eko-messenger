@@ -1,6 +1,7 @@
 .postgres-data/
 result
 .direnv/
+.devenv/
 .env
 .valkey-data/
 private.pem
