@@ -10,12 +10,7 @@ use uuid::Uuid;
 use crate::{
     Activity, AppError, DeviceId, MessengerContext, RequestAuth,
     server::DEVICE_KEYS_ENDPOINT,
-    types::{
-        KeyPackage,
-        activities::{ActivityBase, ActivityBaseMut},
-        actor_uid,
-        objects::{ObjectBase, ObjectBaseMut},
-    },
+    types::{KeyPackage, activities::ActivityBase, actor_uid, objects::ObjectBase},
 };
 
 #[debug_handler]
@@ -51,14 +46,11 @@ pub async fn post_to_outbox(
 
     match &mut payload {
         Activity::Create(create) => {
-            debug!("Recived Create");
-            // Assign an ID to the object if it doesn't have one
             if create.object.id().is_none() {
                 let object_id = format!("{}/objects/{}", ctx.domain, Uuid::new_v4());
                 create.object.as_base_mut().set_id(object_id);
             }
 
-            // Resolve recipients to devices
             let mut target_devices = Vec::new();
             for recipient_url in create.to() {
                 let recipient_uid = actor_uid(recipient_url)?;
@@ -68,7 +60,6 @@ pub async fn post_to_outbox(
                 }
             }
 
-            // Store the create activity
             ctx.storage.insert_create(create, &target_devices).await?;
         }
         Activity::Take(take) => {
@@ -91,9 +82,19 @@ pub async fn post_to_outbox(
             let package = KeyPackage::new(target_did, bytes);
             take.result = Some(package);
         }
-        Activity::Delivered(_) => {
-            // For now, we don't have specific logic for Delivered in the outbox
-            // but we might want to store it or trigger side effects later.
+        Activity::Delivered(delivered) => {
+            let mut target_devices = Vec::new();
+            for recipient_url in delivered.to() {
+                let recipient_uid = actor_uid(recipient_url)?;
+                let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
+                for device in devices {
+                    target_devices.push(device.did);
+                }
+            }
+
+            ctx.storage
+                .insert_delivered(delivered, &target_devices, claims.did)
+                .await?;
         }
     }
 

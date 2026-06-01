@@ -2,7 +2,7 @@ use axum::{Extension, Json, debug_handler, extract::State};
 use tracing::info;
 
 use crate::{
-    activitypub::{Activity, OrderedCollection, actor_url},
+    Activity, OrderedCollection, actor_url,
     errors::AppError,
     server::{MessengerContext, RequestAuth},
 };
@@ -17,5 +17,5 @@ pub async fn get_inbox(
 
     let items = ctx.storage.inbox_activities(auth.did).await?;
     let inbox_url = format!("{}/inbox", actor_id);
-    Ok(Json(OrderedCollection::new(inbox_url, items)))
+    Ok(Json(OrderedCollection::new(inbox_url, Some(items))))
 }
