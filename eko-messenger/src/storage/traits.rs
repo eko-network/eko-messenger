@@ -1,8 +1,9 @@
 use crate::{
+    Activity,
     devices::DeviceId,
     errors::AppError,
     storage::models::{StoredDevice, StoredGroupState},
-    types::{Create},
+    types::{Create, Delivered},
 };
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -10,12 +11,19 @@ use uuid::Uuid;
 #[async_trait]
 pub trait ActivityStore: Send + Sync {
     /// Returns all of the activities in an actors inbox for a specific device. This has side
-    /// affects for `Delivered` and `Take` causing their corresponding deliver requests to be
+    /// affects for `Delivered` causing their corresponding deliver requests to be
     /// removed
-    // async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
+    async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
     //
     /// Stores a create this should mark the message as needing delivery for all devices in the
     async fn insert_create(&self, create: &Create, devices: &[DeviceId]) -> Result<(), AppError>;
+
+    async fn insert_delivered(
+        &self,
+        delivered: &Delivered,
+        devices: &[DeviceId],
+        device: DeviceId,
+    ) -> Result<(), AppError>;
 }
 
 #[async_trait]

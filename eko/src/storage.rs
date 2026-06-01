@@ -1,10 +1,11 @@
 use anyhow::Context;
 use async_trait::async_trait;
 use eko_messenger::{
-    ActivityStore, Create,
+    Activity, ActivityStore, Create,
     devices::DeviceId,
     errors::AppError,
     storage::{DeviceStore, models::StoredDevice},
+    types::{Delivered, objects::ObjectBase},
 };
 use sqlx::{PgPool, Postgres, Row};
 use uuid::Uuid;
@@ -73,17 +74,67 @@ impl DeviceStore for Storage {
 
 #[async_trait]
 impl ActivityStore for Storage {
+    async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError> {
+        let mut tx = self.pool.begin().await?;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT messages.id AS message_id, activity_type, activity
+            FROM messages
+            JOIN entries ON messages.id = entries.message_id
+            WHERE entries.did = $1
+            ORDER BY messages.created_at ASC
+            "#,
+            did.as_uuid()
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let mut activities = Vec::new();
+        for row in rows {
+            let activity: Activity = match row.activity_type.as_str() {
+                "Create" => Activity::Create(serde_json::from_value(row.activity)?),
+                "Take" => Activity::Take(serde_json::from_value(row.activity)?),
+                "Delivered" => {
+                    sqlx::query!(
+                        r#"
+                        DELETE FROM entries
+                        WHERE message_id = $1 AND did = $2
+                        "#,
+                        row.message_id,
+                        did.as_uuid()
+                    )
+                    .execute(&mut *tx)
+                    .await?;
+
+                    Activity::Delivered(serde_json::from_value(row.activity)?)
+                }
+                _ => {
+                    return Err(AppError::BadRequest(format!(
+                        "Unknown activity type: {}",
+                        row.activity_type
+                    )));
+                }
+            };
+            activities.push(activity);
+        }
+
+        tx.commit().await?;
+        Ok(activities)
+    }
+
     async fn insert_create(&self, create: &Create, devices: &[DeviceId]) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await?;
 
         let message_id: i32 = sqlx::query_scalar!(
             r#"
-            INSERT INTO messages (activity_type, object)
-            VALUES ($1, $2)
+            INSERT INTO messages (activity_type, activity, object_id)
+            VALUES ($1, $2, $3)
             RETURNING id
             "#,
             "Create",
-            serde_json::to_value(create).map_err(AppError::from)?
+            serde_json::to_value(create).map_err(AppError::from)?,
+            create.object.id()
         )
         .fetch_one(&mut *tx)
         .await?;
@@ -102,6 +153,29 @@ impl ActivityStore for Storage {
         }
 
         tx.commit().await?;
+        Ok(())
+    }
+    async fn insert_delivered(
+        &self,
+        delivered: &Delivered,
+        devices: &[DeviceId],
+        device: DeviceId,
+    ) -> Result<(), AppError> {
+        let notify_dids: Vec<Uuid> = devices.iter().map(|d| d.as_uuid()).collect();
+
+        sqlx::query!(
+            r#"
+            SELECT public.insert_delivered($1, $2, $3, $4, $5)
+            "#,
+            device.as_uuid(),
+            delivered.object,
+            serde_json::to_value(delivered).map_err(AppError::from)?,
+            delivered.id.as_deref(),
+            &notify_dids
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 }
