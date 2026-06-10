@@ -1,10 +1,10 @@
 # Eko-messenger
 
-Version: 0.0.5
+Version: 0.0.6
 
 ## Overview
 
-Eko-messenger is a federated, decentralized, end-to-end encrypted messaging protocol built on top of [ActivityPub](https://www.w3.org/TR/activitypub/). It enables interpolation between ActivityPub servers while ensuring message encryption using the [Signal Protocol](https://signal.org/docs/).
+Eko-messenger is a federated, decentralized, end-to-end encrypted messaging protocol built on top of [ActivityPub](https://www.w3.org/TR/activitypub/). It enables interpolation between ActivityPub servers while ensuring message encryption using the [Messaging Layer Security (MLS) Protocol](https://datatracker.ietf.org/doc/rfc9420/).
 
 ### Purpose
 
@@ -26,24 +26,25 @@ eko-messenger is designed to:
 2. Decentralization  
    1. Achieves decentralization through federation.  
 3. End-to-End Encrypted  
-   1. All message content is encrypted on device using the Signal Protocol.
+   1. All message content is encrypted on device using the MLS Protocol.
 
 This document defines the eko-messenger protocol. Implementation-specific optimizations and guarantees are described separately.
 
 ## Terminology
 
-* **User**: A human participant represented as an ActivityPub [Actor](https://www.w3.org/TR/activitypub/#actors).  
-* **Device/Client**: A cryptographic endpoint belonging to a User. Each device independently participates in Signal sessions.  
+* **User**: A human participant represented as an ActivityPub [Actor](https://www.w3.org/TR/activitypub/#actors). A User is a collection of one or more Devices.
+* **Device/Client**: A cryptographic endpoint belonging to a User. Each device is a unique leaf in an MLS group tree.
 * **Device ID**: A stable identifier for a Device. May be temporary (i.e. browser session).  
-* **KeyPackage**: A published bundle of Public Identity Keys and PreKeys required to initiate a Signal session with a Device.  
-* **SignalEnvelope**: An ActivityPub object containing encrypted messages for one or more destination Devices.  
-* **Message**: A Signal encrypted payload addressed to a single Device.  
+* **KeyPackage**: An MLS KeyPackage (as defined in RFC 9420) containing the cryptographic keys and parameters required to add a Device to a group.
+* **MlsEnvelope**: An ActivityPub object containing one or more MLS messages (PrivateMessage, Welcome, or Commit).
+* **PrivateMessage**: An MLS encrypted application message addressed to a group.
+* **Welcome**: An MLS message used to invite a new member to a group.
 * **Client-to-Server (C2S)**: Communication between a client/device and its home server.  
 * **Server-to-Server (S2S)**: Federated communication between ActivityPub servers.
-* **Group**: A set of Users that receive the same messages.
-* **Group Epoch**: The monotonically increasing reference of the state of a group.
-* **Group Master Key**: Used to derive message encryption keys for groups.
-* **EncryptedGroupState**: An opaque, end-to-end encrypted representation of a Group State, stored by the server for device synchronization.
+* **Group**: An MLS group consisting of multiple Devices. All communication in eko-messenger (including 1:1 chats) occurs within a Group.
+* **Group ID**: A stable identifier for an MLS group.
+* **Epoch**: The current version of the MLS group state.
+* **EncryptedGroupState**: An opaque, end-to-end encrypted representation of a Group State (MLS context and ratchet tree), stored by the server for device synchronization.
 
 ## ActivityPub Model
 
@@ -58,19 +59,15 @@ Example: `KeyPackage` object
 {
   "@context": "https://eko.network/ns",
   "type": "KeyPackage",
-  "id": "https://eko.network/user/user1/keyPackage/A",
+  "id": "https://eko.network/user/user1/keyPackage/<hash>",
   "deviceId": "<device-id>",
-  "preKeyId": 1,
-  "preKey": "base64-encoded",
-  "signedPreKeyId": 1,
-  "signedPreKey": "base64-encoded",
-  "signedPreKeySignature": "base64-encoded"
+  "value": "base64-encoded-mls-key-package"
 }
 ```
 
 ### KeyCollection
 
-To facilitate the distribution of `KeyPackage`s we define `KeyCollection`, a specialized type of Collection. Unlike standard Collections it is optimized for "Pop" semantics, where retrieving an item implies the consumption of said object.
+To facilitate the distribution of `KeyPackage`s we define `KeyCollection`, a specialized type of Collection. Unlike standard Collections it is optimized for "Pop" semantics, where retrieving an item implies the consumption of said object. In MLS, these are used by other clients to add this device to a group.
 
 #### Object
 A `KeyCollection` must be owned by an Actor or a sub-entity such as a Device.
@@ -83,20 +80,20 @@ Properties:
   "@context": [
     "https://www.w3.org/ns/activitystreams",
     {
-      "KeyCollection": "TODO"
+      "KeyCollection": "https://eko.network/ns#KeyCollection"
     }
   ],
   "id": "https://example.com/alice/device/1/keys",
   "type": "KeyCollection",
-  "attributedTo": "https://example.com/alice/device/1",
+  "attributedTo": "https://example.com/alice/device/1"
 }
 ```
 #### Access
-External actors MUST NOT be able to read or browse the collection. External actors may only interact with the collection through the `Take` activity.
+External actors MUST NOT be able to read or browse the collection. External actors obtain a `KeyPackage` by performing an authenticated `POST` to the `KeyCollection` ID.
 
 #### `Add` activity
 
-The owner of the collection may add one or more `KeyBundles` to the collection.
+The owner of the collection may add one or more `KeyPackage`s to the collection.
 
 ```json
 {
@@ -106,45 +103,29 @@ The owner of the collection may add one or more `KeyBundles` to the collection.
     {
       "type": "KeyPackage",
       "value": "..."
-    },
-    {
-      "type": "KeyPackage",
-      "value": "..."
     }
   ],
   "target": "https://example.com/alice/device/1/keys"
 }
 ```
 
-#### `Take` activity
+#### Claiming a KeyPackage
 
-We define an activity `Take` which user may use to interact with another users `KeyCollection`. To obtain key material for another user, a user will Post a `Take` to their inbox.
+To obtain key material for another user's device, a client performs an authenticated `POST` request to the `KeyCollection` URL.
 
-```json
-{
-  "@context": [
-    "https://www.w3.org/ns/activitystreams",
-    {
-      "Take": "TODO"
-    }
-  ],
-  "type": "Take",
-  "actor": "https://example.com/bob",
-  "object": "https://example.com/devices/1/keyCollection",
-}
-```
-
-Upon receiving a `Take` activity, the server SHOULD:
-* Select a `KeyPackage` from the user's collection.
-* If there are multiple key packages in the collection, atomically remove the selected `KeyPackage`.
-* Return the selected `KeyPackage`.
+Upon receiving a `POST` request, the server SHOULD:
+* Select an available `KeyPackage` from the collection.
+* Atomically remove the selected `KeyPackage`.
+* Return the selected `KeyPackage` in the response body.
+* Return a `410 Gone` or `404 Not Found` if no packages are available.
 
 ### Devices
 
-* Each Actor exposes a `Devices` collection containing references to `AddDevice` and `RevokeDevice` objects forming a hash chain. Each `AddDevice` object should contain a reference to a `KeyCollection`. 
+* Each Actor exposes a `Devices` collection containing references to `AddDevice` and `RevokeDevice` objects forming a hash chain.
+* A User's cryptographic presence in a group is the sum of their active Devices.
 * Device Lifecycle  
-  * Add device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) activity addressed to the `Devices` collection for a `AddDevice` object.  
-  * Remove device: the client issues a [Create](https://www.w3.org/TR/activitystreams-vocabulary/#dfn-create) activity addressed to the `Devices` collection for a `Revoke` object.
+  * **Add device**: The client issues a Create activity for an `AddDevice` object. When a new device is added, the user's existing devices SHOULD add the new device to all active MLS groups by issuing a `Commit` (with the new device's `KeyPackage`) and sending a `Welcome` message.
+  * **Remove device**: The client issues a Create activity for a `RevokeDevice` object. Remaining devices in the user's active groups MUST issue a `Commit` to remove the revoked device's leaf from the MLS trees.
 
 #### AddDevice
 ```json
@@ -156,16 +137,15 @@ Upon receiving a `Take` activity, the server SHOULD:
   "type": "AddDevice",
   "id": "https://eko.network/user/devices/actions/<id>",
   "prev": "<hash of previous node or null if first node>",
-  "did": 0,
-  "eko:keyPackage": "https://eko.network/user/user1/keyPackage",
-  "identityKey": "<device publicKey>",
-  "registrationId": 1,
+  "did": "urn:uuid:<uuid>",
+  "eko:keyCollection": "https://eko.network/user/user1/device/<uuid>/keys",
+  "identityKey": "<device Ed25519/P-256 publicKey>",
   "proof": {
     "type": "DataIntegrityProof",
-    "cryptosuite": "xeddsa-2022",
-    "verificationMethod": "did:eko:asdasd",
-    "proofPurpose": "Authentication",
-    "proof_value": "z....",
+    "cryptosuite": "eddsa-jcs-2022",
+    "verificationMethod": "https://eko.network/user/user1#main-key",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z...."
   }
 }
 ```
@@ -183,10 +163,10 @@ Upon receiving a `Take` activity, the server SHOULD:
   "prev": "<hash of previous node>",
   "proof": {
     "type": "DataIntegrityProof",
-    "cryptosuite": "xeddsa-2022",
-    "verificationMethod": "did:eko:asdasd",
-    "proofPurpose": "Authentication",
-    "proof_value": "z....",
+    "cryptosuite": "eddsa-jcs-2022",
+    "verificationMethod": "https://eko.network/user/user1#main-key",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "z...."
   }
 }
 ```
@@ -219,19 +199,40 @@ Example: User with keyPackages collection
 
 ### Messages
 
-#### SignalEnvelope
+#### MlsEnvelope
 
-All Signal encrypted messages are transported inside a `SignalEnvelope`.
+All MLS encrypted messages are transported inside an `MlsEnvelope`.
 
-* Targets *one* user.
-* `to` is the User to route to. Note: It may be different than the `to` field inside the `SignalEnvelope`. An example of this is multi-device sync. If a user Bob has two devices, when he messages Alice he may wish to copy the message and send it to himself to maintain synchronization between devices.
-* Contains one encrypted Message per destination Device
-  * Message content is stored as a base64 datatype. When unencrypted, the content uses ActivityPub defined types.  
+* Targets *one* or more users/devices depending on the message type.
+* `to` is the User or Device to route to.
+* Contains one or more MLS messages (PrivateMessage, Welcome, or Commit).
 * Is delivered as a single ActivityPub Create activity.
-* `notify` is an optional field set by the client to hint weather or not the server should notify the recipient.
+* `notify` is an optional field set by the client to hint whether or not the server should notify the recipient.
 * `expires` is an optional field. If the server is unable to deliver the message before it expires, it should give up and discard the message. This is useful for transient activities such as a typing indicator.
 
-Example: User sending a `SignalEnvelope`  
+Example: User sending an `MlsEnvelope` with a `PrivateMessage`
+```json 
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Create",
+  "actor": "https://eko.network/user/user1",
+  "to": "https://other.network/user/user2",
+  "object": {
+    "type": "MlsEnvelope",
+    "id": "https://eko.network/messages/id",
+    "published": "2026-01-29T19:30:00Z",
+    "notify": true,
+    "messages": [
+      {
+        "type": "PrivateMessage",
+        "content": "base64-encoded-ciphertext"
+      }
+    ]
+  }
+}
+```
+
+Example: User sending an `MlsEnvelope` with a `Welcome` message
 ```json  
 {
   "@context": "https://www.w3.org/ns/activitystreams",
@@ -239,40 +240,87 @@ Example: User sending a `SignalEnvelope`
   "actor": "https://eko.network/user/user1",
   "to": "https://other.network/user/user2",
   "object": {
-    "type": "SignalEnvelope",
-    "id": "https://eko.network/messages/id"
-    "published": "2026-01-29T19:30:00Z",
-    "notify": true,
-    "expires": "2026-01-29T19:33:00Z"
+    "type": "MlsEnvelope",
+    "id": "https://eko.network/messages/id-welcome",
     "messages": [
       {
-        "to": "https://other.network/devices/device-A"
-        "from": "https://eko.network/devices/device-C"
-        "content": "base64-encoded-ciphertext"
-      },
-      {
-        "to": "https://other.network/devices/device-A"
-        "from": "https://eko.network/devices/device-C"
-        "content": "base64-encoded-ciphertext"
+        "type": "Welcome",
+        "content": "base64-encoded-welcome-message"
       }
     ]
   }
 }
 ```
 #### Delivered
-To support transience, upon receiving a SignalEnvelop, the client MUST respond with a `Delivered` activity. Upon receiving a `Delivered` Activity the server MUST remove that devices message entry from the message and not deliver the message again.
+To support transience, upon receiving an MlsEnvelope, the client MUST respond with a `Delivered` activity. Upon receiving a `Delivered` Activity the server MUST remove that device's message entry or the entire envelope if delivered.
 Example: a `Delivered` Activity
 ```json  
 {
   "@context": "https://www.w3.org/ns/activitystreams",
   "id": "https://eko.network/activities/id",
-  "from": "https://eko.network/devices/id",
   "type": "Delivered",
-  "actor": "https://eko.network/user/user1",
-  "to": "https://other.network/user/user2",
+  "actor": "https://eko.network/user/user2",
+  "to": "https://eko.network/user/user1",
   "object": "https://eko.network/messages/id"
 }
 ```
+## Group Messaging
+
+This section defines end-to-end encrypted group messaging using the MLS protocol.
+
+Group membership, state transitions, and message encryption are handled by the MLS protocol as defined in [RFC 9420](https://datatracker.ietf.org/doc/rfc9420/).
+Servers are intentionally blind to group semantics and MUST NOT interpret, validate, or enforce group state.
+
+### Group
+
+A Group represents an encrypted conversation between multiple members (Devices).
+- Identified by a stable `groupId`. MUST be a 128-bit UUID.
+- **1:1 Messaging**: In eko-messenger, 1:1 messaging is implemented as an MLS group containing all devices of exactly two Users.
+- **Group Messaging**: A group containing devices of two or more Users.
+
+### Group State
+
+Each client participating in a Group maintains a local MLS Group State.
+
+#### Server Encrypted Group State
+To support device synchronization and recovery, clients MAY upload encrypted snapshots of MLS Group State (including the ratchet tree and group context) to their home server.
+
+Example: Server Visible EncryptedGroupState
+```json
+{
+  "type": "EncryptedGroupState",
+  "id": "https://eko.network/user/alice/groupState/<group-id>",
+  "groupId": "urn:uuid:<group-id>",
+  "epoch": 7,
+  "mediaType": "application/mls-group-state",
+  "encoding": "base64",
+  "content": "<base64-encoded-ciphertext>"
+}
+```
+
+### Sending a Group Message
+
+1. Client prepares an ActivityPub object.
+2. Client encrypts the object into an MLS `PrivateMessage` using the current MLS group state.
+3. The `PrivateMessage` is wrapped in an `MlsEnvelope`.
+4. The `MlsEnvelope` is sent to the inboxes of all group members' servers.
+
+### Group Operations (Add/Remove)
+
+Group operations like adding or removing members are performed using MLS `Commit` and `Welcome` messages.
+
+1. **Adding a User**:
+   - To add a User, the adding client MUST add **all** active devices of that User.
+   - The adding client fetches a `KeyPackage` for each of the new User's devices from their `KeyCollection`.
+   - The adding client creates an MLS `Commit` (adding all the devices) and the corresponding `Welcome` messages.
+   - The `Commit` is sent to existing members.
+   - The `Welcome` messages are sent to each of the new User's devices.
+
+2. **Removing a User**:
+   - To remove a User, the removing client MUST remove **all** devices associated with that User's Actor from the MLS group.
+   - The removing client creates an MLS `Commit` removing the target devices.
+   - The `Commit` is sent to the remaining members.
+
 ## Encrypted Content
 
 All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryption, clients MUST process the content as if it were received directly from an ActivityPub inbox.
@@ -299,6 +347,7 @@ Groups (see Group Messaging Section for more information):
 - GroupMemberAdd
 - GroupMemberRemove
 - GroupKeyRotate
+
 ### Constraints
 
 The following restrictions apply to content objects embedded in encrypted messages:
@@ -382,288 +431,55 @@ Example: Delete activity
 ### Send Message
 
 When sending a message, the client:
-1. Fetches each recipient’s `keyPackages` collection.  
-2. Encrypts the message for each recipient’s Device using the Signal protocol.  
-3. Creates a `SignalEnvelope` containing one encrypted Message per Device.  
-4. POSTs a Create activity with the `SignalEvelop` to its outbox.
+1. Fetches each recipient’s `KeyCollection` if adding new members or starting a group.
+2. Encrypts the message using the MLS protocol (resulting in a `PrivateMessage`, `Welcome`, or `Commit`).
+3. Creates an `MlsEnvelope` containing the MLS message(s).
+4. POSTs a Create activity with the `MlsEnvelope` to its outbox.
+
 ### Receive Message
 
 #### Message
-1. Decrypt message.  
-2. Read as ActivityPub.
-#### PartialDelivery
-1. Re-pull Recipient’s `KeyPackages` and any keys the client does not have.  
-2. Resend `SignalEnvelop` with remaining encrypted messages.
-#### Reject
-1. Re-pull Recipient’s KeyPackages and any keys the client does not have.  
-2. Resend `SignalEnvelope` with new encrypted messages.
+1. Decrypt the MLS message using the local group state.
+2. Read the decrypted content as ActivityPub.
+
 ## Server-to-Server Protocol (S2S)
 
 ### Send Message
 
-When the server receives a `SignalEnvelope` message in the User’s inbox:
+When the server receives an `MlsEnvelope` message in the User’s inbox:
 
 1. Server delivers the envelope to the receiver’s inbox.  
    1. Synchronously if the receiver is on the User’s homeserver.  
-   1. Asynchronously if on an external server.  
-      1. Note: the external server may reject the `SignalEnvelope` if not all devices have an encrypted message.
+   1. Asynchronously if on an external server.
 
 ### Receive Message
 
-When a server receives a `SignalEnvelope`, it SHOULD:
+When a server receives an `MlsEnvelope`, it SHOULD:
 
 1. ACK the delivery.  
-1. Verify the envelope contains exactly one encrypted Message for each currently registered Device of the recipient User.  
-1. If verification succeeds, the message is put in the receiving User’s inbox.  
-   1. The server MAY send a Confirm activity to the sender’s inbox to confirm delivery.  
-1. If verification fails, a Reject activity MUST be sent to the Sender’s inbox.
-
-Example: Reject
-```json  
-{
-  "@context": [
-    "https://www.w3.org/ns/activitystreams",
-    "https://eko.network/ns"
-  ],
-  "type": "Reject",
-  "actor": "https://other.network",
-  "to": [
-    "https://eko.network/user/user1"
-  ],
-  "object": "https://eko.network/user/signal/<envelope-id>",
-  "summary": "SignalEnvelope rejected: encrypted messages missing for one or more recipient devices."
-}
-```
-
-## Group Messaging
-This section defines end-to-end encrypted group messaging using client-managed group state and cryptographic authorization.
-
-Group membership, roles, and state transitions are enforced exclusively by clients.
-Servers are intentionally blind to group semantics and MUST NOT interpret, validate, or enforce group state.
-
-This design mirrors Signal's modern group architecture ([paper](https://eprint.iacr.org/2019/1416.pdf)), excluding server-mediated anonymous credential proofs, which are explicitly deferred to future versions of this specification.
-### Group
-A Group represents an encrypted conversation between multiple members.
-- Identified by a stable, `groupId`.  MUST be a 128-bit UUID.
-- Exists only within encrypted payloads, client local storage, and encrypted blobs stored on the server.
-#### Server Blind Groups
-> This version excludes server mediated authorization for group state access or modification. We leave AuthCredentials for a new version of the specification as described in the [blog](https://signal.org/blog/signal-private-group-system/) and [paper](https://eprint.iacr.org/2019/1416.pdf).
-- Servers do not authenticate or authorize group membership.
-- Servers do not validate group control operations.
-- Server store `EncryptedGroupState` objects as opaque blobs without enforcing access control.
-
-All group membership, authorization, and state transition validity are enforced exclusively by clients using shared cryptographic secrets. Anonymous credentials and zero knowledge proofs are out of scope for now.
-
-### Group State
-Each client participating in a Group maintains a local Group State that contains the `groupId`, `epoch`, member list, admin roles, and master key.
-
-Example: Group State
-```json
-{
-  "groupId": "urn:uuid:<uuid>",
-  "epoch": 5,
-  "members": [
-    "https://eko.network/user/alice",
-    "https://other.network/user/bob"
-  ],
-  "admins": [
-    "https://eko.network/user/alice"
-  ],
-  "groupMasterKey": "<base64>",
-}
-```
-
-`epoch`
-- Each group maintains a monotonically increasing integer epoch.
-- MUST be incremented on any membership or key change.
-- Messages referencing a stale or unknown epoch MUST be rejected by the client.
-
-`groupMasterKey`
-- Symmetric secret shared by all current group members.
-- Derives the message encryption keys and group authentication (signing) keys.
-- MUST be rotated whenever a member is removed.
-
-#### Server Encrypted Group State
-To support device synchronization and recovery, clients MAY upload encrypted snapshots of Group State to their home server.
-
-Example: Server Visible EncryptedGroupState
-```json
-{
-  "type": "EncryptedGroupState",
-  "id": "https://eko.network/user/alice/groupState/<group-id>",
-  "groupId": "urn:uuid:<group-id>",
-  "epoch": 7,
-  "mediaType": "application/eko-group-state",
-  "encoding": "base64",
-  "content": "<base64-encoded-ciphertext>"
-}
-```
-
-##### Server Requirements
-For each User, the server MUST:
-- Store only the latest `EncryptedGroupState` per `groupId`
-- Treat all group state blobs as opaque
-- Replace older blobs when a higher epoch is received
-- Associate blobs only with the owning User
-
-Servers MUST NOT:
-- Inspect contents
-- Modify contents
-- Enforce access control
-- Infer membership
-
-##### C2S Group State API for eko-messenger
-`EncryptedGroupState` management is a private, non-federated concern between a client and its home server. Thus, this is left as an implementation detail.
-
-Because the server is blind to group semantics, group state storage uses only REST endpoints rather than ActivityPub activities. Group control messages (`GroupCreate`, `GroupMemberAdd`, `GroupMemberRemove`, `GroupKeyRotate`) are separate, encrypted content delivered inside `SignalEnvelope`s through the normal outbox/inbox activities.
-
-All group state endpoints require authentication. Clients MUST only access their own group state.
-
-#### Group State Authentication
-All group control objects MUST be authenticated using a Group Signing Key derived from the previous Group State.
-
-##### Group Signing Key
-```
-groupSigningKey = HKDF(
-  input = groupMasterKey,
-  info  = "eko.group.signing",
-  length = 32
-)
-```
-
-##### Authentication Algorithm
-Compute the HMAC with the canonical JSON of the group control object.
-```
-mac = HMAC_SHA256(
-    key = groupSigningKey,
-    message = canonical_json(groupControlObject)
-)
-```
-
-Example: Authenticated Group Control Message
-```json
-{
-  "type": "GroupMemberAdd",
-  "groupId": "urn:uuid:<group-id>",
-  "epoch": 6,
-  "added": [
-    "https://new.network/user/charlie"
-  ],
-  "signature": {
-    "alg": "HMAC-SHA256",
-    "value": "<base64>"
-  }
-}
-```
-
-To prevent malicious servers from modifying Groups, clients MUST reject unsigned or invalidly signed group control messages.
-### Creating a Group
-1. Creator generates a `groupId` and `groupMasterKey`.
-2. Initializes `epoch=1`, member list, admin list.
-3. Sends a `GroupCreate` message to every device of every initial member.
-
-Example: Group Creation
-```json
-{
-  "type": "GroupCreate",
-  "groupId": "urn:uuid:<group-id>",
-  "epoch": 1,
-  "members": [
-    "https://eko.network/user/alice",
-    "https://other.network/user/bob"
-  ],
-  "admins": [
-    "https://eko.network/user/alice"
-  ],
-  "groupMasterKey": "<base64>"
-}
-```
-
-### Modifying Group Membership
-Only clients whose local Group State grants them permission (by being present in the admin list) MAY generate valid group control messages.
-#### Adding a Member(s)
-1. The authorized client
-	1. Increments the `epoch`.
-	2. Rotates the `groupMasterKey`.
-2. Sends
-	1. `GroupMemberAdd` to existing members.
-	2. `GroupCreate` to new member(s).
-
-Example: Adding a New Group Member
-```json
-{
-  "type": "GroupMemberAdd",
-  "groupId": "urn:uuid:<uuid>",
-  "epoch": 6,
-  "added": [
-    "https://new.network/user/charlie"
-  ]
-}
-```
-```json
-{
-  "type": "GroupCreate",
-  "groupId": "urn:uuid:<uuid>",
-  "epoch": 6,
-  "members": [...],
-  "groupMasterKey": "<key>"
-}
-```
-
-#### Removing a Member
-1. The authorized client
-	1. Removes the member.
-	2. Rotates the `groupMasterKey`.
-	3. Increments the `epoch`.
-2. Sends a `GroupMemberRemove` activity to the remaining members.
-
-Example: Removing a Member
-```json
-{
-  "type": "GroupMemberRemove",
-  "id": "urn:uuid:<uuid>",
-  "groupId": "urn:uuid:<group-id>",
-  "epoch": 7,
-  "removed": [
-    "https://other.network/user/bob"
-  ]
-}
-```
-
-Note: Because of federation and servers not knowing group membership, removed users may still receive group messages, but cannot decrypt new messages.
-### Sending a Group Message
-1. Client checks it has the current Group State.
-2. Client creates a standard ActivityPub object.
-	1. Object includes `groupId` and `epoch`.
-3. Object is encrypted using keys derived from `groupMasterKey`.
-4. One `SignalEnvelope` is sent per recipient user, containing messages for each device.
-
-Clients MUST drop:
-- Messages with stale epochs.
-- Messages failing decryption.
-- Messages failing group authentication.
-
-Example: Create Note Activity in a Group
-```json
-{
-  "type": "Create",
-  "object": {
-    "type": "Note",
-    "id": "urn:uuid:<uuid>",
-    "content": "hello group",
-    "groupId": "urn:uuid:<group-id>",
-    "epoch": 5
-  }
-}
-```
+1. Verify the envelope is validly formatted.
+1. Put the message in the receiving User’s inbox.
 
 ## E2E Encryption
 
-- TODO: Signal encryption mechanism described here.
+Eko-messenger uses the **Messaging Layer Security (MLS)** protocol for end-to-end encryption. MLS provides efficient group key agreement with forward secrecy and post-compromise security.
+
+For details on the MLS protocol, see [RFC 9420](https://datatracker.ietf.org/doc/rfc9420/).
+
+### Ciphersuites
+Clients SHOULD support the following MLS ciphersuites:
+- `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`
+- `MLS_128_DHKEMP256_AES128GCM_SHA256_P256`
+<!-- do others? -->
 
 ## Key Management
 
-- TODO
+### Identity Keys
+Each device has a stable Ed25519 or P-256 identity key used to sign MLS `KeyPackage`s and authenticate the device.
+
+### Key Packages
+Devices publish MLS `KeyPackage`s to their `KeyCollection`. These packages are consumed by other clients to add the device to an MLS group.
+
 
 ## Trust Model and Limitations
 
@@ -681,9 +497,10 @@ The following are eko-messenger-specific behaviors and are not required by the p
 
 ### Message Ordering
 
-Signal currently has no message ordering guarantees, and is a current [issue](https://community.signalusers.org/t/message-ordering/2581/56). Messages may arrive out of order.
+MLS provides an ordered delivery guarantee within the context of a group epoch. Messages within the same epoch are ordered by the sequence in which they were applied to the group state.
 
-* No global ordering guarantees. We will server timestamp messages to provide a client’s relative message ordering.  
+* Clients MUST process MLS `Commit` messages to maintain synchronization of the group state and message ordering.
+* No global ordering guarantees across different groups or users. We will server timestamp messages to provide a client’s relative message ordering.  
 * Clients MAY apply local heuristics for ordering.
 
 ### Push Notifications
