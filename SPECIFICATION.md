@@ -36,9 +36,9 @@ This document defines the eko-messenger protocol. Implementation-specific optimi
 * **Device/Client**: A cryptographic endpoint belonging to a User. Each device is a unique leaf in an MLS group tree.
 * **Device ID**: A stable identifier for a Device. May be temporary (i.e. browser session).  
 * **KeyPackage**: An MLS KeyPackage (as defined in RFC 9420) containing the cryptographic keys and parameters required to add a Device to a group.
-* **MlsEnvelope**: An ActivityPub object containing one or more MLS messages (PrivateMessage, Welcome, or Commit).
 * **PrivateMessage**: An MLS encrypted application message addressed to a group.
 * **Welcome**: An MLS message used to invite a new member to a group.
+* **Commit**: An MLS message used to initiate a new epoch for a group that instructs group members to apply the following Proposals.
 * **Client-to-Server (C2S)**: Communication between a client/device and its home server.  
 * **Server-to-Server (S2S)**: Federated communication between ActivityPub servers.
 * **Group**: An MLS group consisting of multiple Devices. All communication in eko-messenger (including 1:1 chats) occurs within a Group.
@@ -199,18 +199,15 @@ Example: User with keyPackages collection
 
 ### Messages
 
-#### MlsEnvelope
-
-All MLS encrypted messages are transported inside an `MlsEnvelope`.
-
-* Targets *one* or more users/devices depending on the message type.
-* `to` is the User or Device to route to.
+All MLS encrypted messages:
+* Targets *one* Group.
+* `to` is the list of Users the server must fanout the message to.
 * Contains one or more MLS messages (PrivateMessage, Welcome, or Commit).
 * Is delivered as a single ActivityPub Create activity.
 * `notify` is an optional field set by the client to hint whether or not the server should notify the recipient.
 * `expires` is an optional field. If the server is unable to deliver the message before it expires, it should give up and discard the message. This is useful for transient activities such as a typing indicator.
 
-Example: User sending an `MlsEnvelope` with a `PrivateMessage`
+Example: User sending a `PrivateMessage`
 ```json 
 {
   "@context": "https://www.w3.org/ns/activitystreams",
@@ -218,21 +215,17 @@ Example: User sending an `MlsEnvelope` with a `PrivateMessage`
   "actor": "https://eko.network/user/user1",
   "to": "https://other.network/user/user2",
   "object": {
-    "type": "MlsEnvelope",
     "id": "https://eko.network/messages/id",
     "published": "2026-01-29T19:30:00Z",
     "notify": true,
-    "messages": [
-      {
-        "type": "PrivateMessage",
-        "content": "base64-encoded-ciphertext"
-      }
+    "type": "PrivateMessage",
+    "content": "base64-encoded-ciphertext"
     ]
   }
 }
 ```
 
-Example: User sending an `MlsEnvelope` with a `Welcome` message
+Example: User sending a `Welcome` message
 ```json  
 {
   "@context": "https://www.w3.org/ns/activitystreams",
@@ -240,17 +233,13 @@ Example: User sending an `MlsEnvelope` with a `Welcome` message
   "actor": "https://eko.network/user/user1",
   "to": "https://other.network/user/user2",
   "object": {
-    "type": "MlsEnvelope",
     "id": "https://eko.network/messages/id-welcome",
-    "messages": [
-      {
-        "type": "Welcome",
-        "content": "base64-encoded-welcome-message"
-      }
-    ]
+    "type": "Welcome",
+    "content": "base64-encoded-welcome-message"
   }
 }
 ```
+
 #### Delivered
 To support transience, upon receiving an MlsEnvelope, the client MUST respond with a `Delivered` activity. Upon receiving a `Delivered` Activity the server MUST remove that device's message entry or the entire envelope if delivered.
 Example: a `Delivered` Activity
@@ -279,7 +268,7 @@ A Group represents an encrypted conversation between multiple members (Devices).
 - **Group Messaging**: A group containing devices of two or more Users.
 
 ### Group State
-
+<!-- Leaving here but unsure when/if this is needed or how/what information should be stored -->
 Each client participating in a Group maintains a local MLS Group State.
 
 #### Server Encrypted Group State
@@ -302,8 +291,7 @@ Example: Server Visible EncryptedGroupState
 
 1. Client prepares an ActivityPub object.
 2. Client encrypts the object into an MLS `PrivateMessage` using the current MLS group state.
-3. The `PrivateMessage` is wrapped in an `MlsEnvelope`.
-4. The `MlsEnvelope` is sent to the inboxes of all group members' servers.
+3. The `PrivateMessage` is sent to the inboxes of all group members' servers.
 
 ### Group Operations (Add/Remove)
 
@@ -340,13 +328,6 @@ All encrypted messages MUST encrypt a complete ActivityPub activity. Upon decryp
 * Image  
 * Audio  
 * Video
-
-Groups (see Group Messaging Section for more information):
-- GroupCreate
-- GroupUpdate
-- GroupMemberAdd
-- GroupMemberRemove
-- GroupKeyRotate
 
 ### Constraints
 
@@ -507,3 +488,5 @@ MLS provides an ordered delivery guarantee within the context of a group epoch. 
 
 * Will be implemented, but is handled out-of-band and is not part of the protocol.
 
+# TODO's
+* Alice lost all her devices (for instance, she deletes the app and its data). What does recovery look like.
