@@ -1,20 +1,7 @@
-use crate::types::{KeyPackage, Object};
+use crate::types::Object;
 use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
-
-#[derive(Deserialize, Debug, Serialize, Clone)]
-pub struct Take {
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    #[serde(rename = "@context")]
-    pub context: Value,
-    pub actor: String,
-    pub to: Vec<String>,
-    #[serde(default)]
-    pub result: Option<KeyPackage>,
-}
 
 #[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct Delivered {
@@ -43,7 +30,6 @@ pub struct Create {
 #[serde(tag = "type")]
 
 pub enum Activity {
-    Take(Take),
     Create(Create),
     Delivered(Delivered),
 }
@@ -67,26 +53,23 @@ macro_rules! impl_activity_base {
     )*};
 }
 
-impl_activity_base!(Take, Create, Delivered);
+impl_activity_base!(Create, Delivered);
 
 impl ActivityBase for Activity {
     fn id(&self) -> Option<&str> {
         match self {
-            Activity::Take(v) => v.id(),
             Activity::Create(v) => v.id(),
             Activity::Delivered(v) => v.id(),
         }
     }
     fn actor(&self) -> &str {
         match self {
-            Activity::Take(v) => v.actor(),
             Activity::Create(v) => v.actor(),
             Activity::Delivered(v) => v.actor(),
         }
     }
     fn to(&self) -> &Vec<String> {
         match self {
-            Activity::Take(v) => v.to(),
             Activity::Create(v) => v.to(),
             Activity::Delivered(v) => v.to(),
         }
@@ -96,7 +79,6 @@ impl ActivityBase for Activity {
 impl Activity {
     pub fn as_mut(&mut self) -> &mut dyn ActivityBaseMut {
         match self {
-            Activity::Take(v) => v,
             Activity::Create(v) => v,
             Activity::Delivered(v) => v,
         }

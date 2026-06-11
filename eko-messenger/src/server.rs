@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::{
-    server::handlers::{capabilities_handler, get_inbox, post_to_outbox},
+    server::handlers::{capabilities_handler, get_inbox, post_to_outbox, take_key},
     storage::Storage,
 };
 pub const ACTIVITY_STREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
@@ -35,6 +35,7 @@ pub struct RequestAuth {
 pub fn protocol_routes() -> Router<MessengerContext> {
     Router::new()
         .route("/users/{uid}/devices", get(get_devices))
+        .route("/users/{uid}/devices/{did}/keys", post(take_key))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
 }

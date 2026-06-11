@@ -94,7 +94,6 @@ impl ActivityStore for Storage {
         for row in rows {
             let activity: Activity = match row.activity_type.as_str() {
                 "Create" => Activity::Create(serde_json::from_value(row.activity)?),
-                "Take" => Activity::Take(serde_json::from_value(row.activity)?),
                 "Delivered" => {
                     sqlx::query!(
                         r#"

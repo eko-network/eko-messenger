@@ -8,9 +8,8 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
-    Activity, AppError, DeviceId, MessengerContext, RequestAuth,
-    server::DEVICE_KEYS_ENDPOINT,
-    types::{KeyPackage, activities::ActivityBase, actor_uid, objects::ObjectBase},
+    Activity, AppError, MessengerContext, RequestAuth,
+    types::{activities::ActivityBase, actor_uid, objects::ObjectBase},
 };
 
 #[debug_handler]
@@ -61,26 +60,6 @@ pub async fn post_to_outbox(
             }
 
             ctx.storage.insert_create(create, &target_devices).await?;
-        }
-        Activity::Take(take) => {
-            let to = take.to();
-            if to.len() != 1 {
-                return Err(AppError::BadRequest(
-                    "Take activity must have exactly one recipient".into(),
-                ));
-            }
-            let to_url = to.first().unwrap();
-            if !to_url.ends_with(DEVICE_KEYS_ENDPOINT) {
-                return Err(AppError::BadRequest("Invalid target URL for Take".into()));
-            }
-
-            let device_url = to_url
-                .strip_suffix(&format!("/{DEVICE_KEYS_ENDPOINT}"))
-                .unwrap_or(to_url);
-            let target_did = DeviceId::from_url(device_url)?;
-            let bytes = ctx.storage.take_key_package(target_did).await?;
-            let package = KeyPackage::new(target_did, bytes);
-            take.result = Some(package);
         }
         Activity::Delivered(delivered) => {
             let mut target_devices = Vec::new();
