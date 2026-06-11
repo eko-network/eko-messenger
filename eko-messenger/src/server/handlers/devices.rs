@@ -1,7 +1,8 @@
 use crate::{
+    DeviceId,
     errors::AppError,
     server::{DEVICE_ENDPOINT, DEVICE_KEYS_ENDPOINT, MessengerContext, USERS_ENDPOINT},
-    types::{collection::Collection, eko_types::Device},
+    types::{KeyPackage, collection::Collection, eko_types::Device},
 };
 use axum::{
     Json, debug_handler,
@@ -32,4 +33,14 @@ pub async fn get_devices(
         .collect::<Result<Vec<Device>, url::ParseError>>()?;
     let items = (!fetched_items.is_empty()).then(|| fetched_items);
     Ok(Json(Collection::new(path.to_string(), items)))
+}
+
+#[debug_handler]
+pub async fn take_key(
+    State(ctx): State<MessengerContext>,
+    Path((_uid, did)): Path<(String, DeviceId)>,
+) -> Result<Json<KeyPackage>, AppError> {
+    let bytes = ctx.storage.take_key_package(did).await?;
+    let package = KeyPackage::new(did, bytes);
+    Ok(Json(package))
 }
