@@ -14,6 +14,7 @@ use axum::{
     response::Html,
     routing::get,
 };
+use eko_messenger::server::WebSocketService;
 use eko_messenger::{MessengerContext, protocol_routes, public_routes};
 use storage::Storage;
 use tokio::net::TcpListener;
@@ -76,6 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pg_init(&cfg.supabase_db_url)?,
             pg_init_with_migration(&cfg.db_url).await?,
         )),
+        sockets: Arc::new(WebSocketService::new()),
     };
 
     info!("eko listening on {}", domain);

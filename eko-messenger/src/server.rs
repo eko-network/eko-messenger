@@ -1,4 +1,5 @@
 mod handlers;
+mod websocket;
 use std::sync::Arc;
 
 use axum::{
@@ -8,9 +9,13 @@ use axum::{
 use handlers::get_devices;
 use serde::Deserialize;
 use serde_json::{Map, Value};
+pub use websocket::WebSocketService;
 
 use crate::{
-    server::handlers::{capabilities_handler, get_inbox, post_to_outbox, take_key},
+    server::{
+        handlers::{capabilities_handler, get_inbox, post_to_outbox, take_key},
+        websocket::ws_handler,
+    },
     storage::Storage,
 };
 pub const ACTIVITY_STREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
@@ -20,10 +25,13 @@ pub const USERS_ENDPOINT: &str = "users";
 pub const DEVICE_ENDPOINT: &str = "devices";
 pub const DEVICE_KEYS_ENDPOINT: &str = "keys";
 
+pub const SOCKET_URL: &str = "/ws";
+
 #[derive(Clone)]
 pub struct MessengerContext {
     pub domain: Arc<String>,
     pub storage: Arc<dyn Storage>,
+    pub sockets: Arc<WebSocketService>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -38,6 +46,7 @@ pub fn protocol_routes() -> Router<MessengerContext> {
         .route("/users/{uid}/devices/{did}/keys", post(take_key))
         .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
+        .route(SOCKET_URL, get(ws_handler))
 }
 
 pub fn public_routes() -> Router<MessengerContext> {
