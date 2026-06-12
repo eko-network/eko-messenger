@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use futures::future::join_all;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -51,15 +52,23 @@ pub async fn post_to_outbox(
             }
 
             let mut target_devices = Vec::new();
+            let mut delivery_futures = Vec::new();
             for recipient_url in create.to() {
                 let recipient_uid = actor_uid(recipient_url)?;
                 let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
                 for device in devices {
+                    delivery_futures.push(ctx.sockets.try_websocket_delivery(
+                        Activity::Create(create.clone()),
+                        recipient_uid.clone(),
+                        device.did,
+                    ));
                     target_devices.push(device.did);
                 }
             }
-
+            // NOTE blocking the websocket push until the create activity is stored to remove
+            // the edge case where delivered is processed before the activity hits the inbox
             ctx.storage.insert_create(create, &target_devices).await?;
+            join_all(delivery_futures).await;
         }
         Activity::Delivered(delivered) => {
             let mut target_devices = Vec::new();
