@@ -72,14 +72,20 @@ pub async fn post_to_outbox(
         }
         Activity::Delivered(delivered) => {
             let mut target_devices = Vec::new();
+            let mut delivery_futures = Vec::new();
             for recipient_url in delivered.to() {
                 let recipient_uid = actor_uid(recipient_url)?;
                 let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
                 for device in devices {
+                    delivery_futures.push(ctx.sockets.try_websocket_delivery(
+                        Activity::Delivered(delivered.clone()),
+                        recipient_uid.clone(),
+                        device.did,
+                    ));
                     target_devices.push(device.did);
                 }
             }
-
+            join_all(delivery_futures).await;
             ctx.storage
                 .insert_delivered(delivered, &target_devices, claims.did)
                 .await?;
