@@ -73,6 +73,31 @@ pub struct StoredUser {
     pub created_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceType {
+    Ios,
+    Android,
+    Linux,
+    Browser,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationType {
+    Apns,
+    WebPush,
+}
+
+pub struct DeviceNotificationInfo {
+    pub uid: Uuid,
+    pub did: DeviceId,
+    pub token: String,
+    pub device_type: Option<DeviceType>,
+    pub notification_type: NotificationType,
+    pub active: bool,
+}
+
 /// Opaque encrypted group state blob stored for device synchronization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,4 +1,5 @@
 mod handlers;
+pub mod notification;
 mod websocket;
 use std::sync::Arc;
 
