@@ -4,12 +4,16 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use base64::Engine;
+use base64::engine::general_purpose;
 use futures::future::join_all;
+use serde_json::Value;
 use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
     Activity, AppError, MessengerContext, RequestAuth,
+    server::notification::send_push_notifications,
     types::{activities::ActivityBase, actor_uid, objects::ObjectBase},
 };
 
@@ -69,6 +73,29 @@ pub async fn post_to_outbox(
             // the edge case where delivered is processed before the activity hits the inbox
             ctx.storage.insert_create(create, &target_devices).await?;
             join_all(delivery_futures).await;
+
+            let client = reqwest::Client::builder().use_rustls_tls().build()?;
+            let storage = ctx.storage.clone();
+            let devices = target_devices.clone();
+            let title = "New message";
+            let body = "Encrypted message";
+            let payload_data =
+                Value::String(general_purpose::STANDARD.encode(create.object.content()));
+            let activity_id = create.id.clone();
+            let object_id = create.object.id().map(|s| s.to_string());
+            tokio::spawn(async move {
+                send_push_notifications(
+                    &client,
+                    storage.as_ref(),
+                    &devices,
+                    title,
+                    body,
+                    &payload_data,
+                    activity_id,
+                    object_id,
+                )
+                .await;
+            });
         }
         Activity::Delivered(delivered) => {
             let mut target_devices = Vec::new();

@@ -4,7 +4,11 @@ use eko_messenger::{
     Activity, ActivityStore, Create,
     devices::DeviceId,
     errors::AppError,
-    storage::{DeviceStore, models::StoredDevice},
+    storage::{
+        DeviceStore,
+        models::{DeviceNotificationInfo, StoredDevice},
+        traits::NotificationStore,
+    },
     types::{Delivered, objects::ObjectBase},
 };
 use sqlx::{PgPool, Postgres, Row};
@@ -173,6 +177,72 @@ impl ActivityStore for Storage {
             &notify_dids
         )
         .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl NotificationStore for Storage {
+    async fn retrive_endpoints(
+        &self,
+        device_ids: Vec<DeviceId>,
+    ) -> Result<Option<Vec<DeviceNotificationInfo>>, AppError> {
+        let uuids: Vec<Uuid> = device_ids.iter().map(|d| d.as_uuid()).collect();
+
+        let rows = sqlx::query(
+            r#"
+            SELECT user_uid, device_id, token, device_type::text AS device_type, notification_type::text AS notification_type, active
+            FROM public.notifications
+            WHERE device_id = ANY($1) AND active = true
+            "#,
+        )
+        .bind(&uuids)
+        .fetch_all(&self.spool)
+        .await?;
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let endpoints: Vec<DeviceNotificationInfo> = rows
+            .into_iter()
+            .map(|row| {
+                let device_type_str: Option<String> = row.get("device_type");
+                let notification_type_str: String = row.get("notification_type");
+
+                Ok(DeviceNotificationInfo {
+                    uid: row.get("user_uid"),
+                    did: DeviceId::new(row.get("device_id")),
+                    token: row.get("token"),
+                    device_type: device_type_str
+                        .map(|s| {
+                            serde_json::from_value(serde_json::Value::String(s))
+                                .map_err(AppError::from)
+                        })
+                        .transpose()?,
+                    notification_type: serde_json::from_value(serde_json::Value::String(
+                        notification_type_str,
+                    ))?,
+                    active: row.get("active"),
+                })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+
+        Ok(Some(endpoints))
+    }
+
+    async fn mark_inactive(&self, did: DeviceId) -> Result<(), AppError> {
+        sqlx::query(
+            r#"
+            UPDATE public.notifications
+            SET active = false
+            WHERE device_id = $1
+            "#,
+        )
+        .bind(did.as_uuid())
+        .execute(&self.spool)
         .await?;
 
         Ok(())

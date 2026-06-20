@@ -64,6 +64,15 @@ pub trait ActorStore: Send + Sync {
 // }
 
 #[async_trait]
+pub trait NotificationStore: Send + Sync {
+    async fn retrive_endpoints(
+        &self,
+        dids: Vec<DeviceId>,
+    ) -> Result<Option<Vec<crate::storage::models::DeviceNotificationInfo>>, AppError>;
+    async fn mark_inactive(&self, did: DeviceId) -> Result<(), AppError>;
+}
+
+#[async_trait]
 pub trait UserStore: Send + Sync {
     async fn get_user_by_email(
         &self,
@@ -117,6 +126,6 @@ pub trait GroupStore: Send + Sync {
 }
 
 /// Full messenger storage — implement all sub-traits on your backend type.
-pub trait Storage: Send + Sync + DeviceStore + ActivityStore {}
+pub trait Storage: Send + Sync + DeviceStore + ActivityStore + NotificationStore {}
 
-impl<T> Storage for T where T: Send + Sync + DeviceStore + ActivityStore {}
+impl<T> Storage for T where T: Send + Sync + DeviceStore + ActivityStore + NotificationStore {}
