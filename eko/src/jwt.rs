@@ -1,10 +1,13 @@
-use eko_messenger::{DeviceId, RequestAuth};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use chrono::{DateTime, Utc};
+use eko_messenger::{AppError, DeviceId, RequestAuth};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, Validation, dangerous::insecure_decode, decode, decode_header,
+};
 use serde::Deserialize;
+use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use uuid::Uuid;
-
 #[derive(Debug, Deserialize)]
 struct Jwks {
     keys: Vec<Jwk>,
@@ -21,8 +24,16 @@ struct Jwk {
 
 #[derive(Debug, Deserialize)]
 struct Claims {
-    did: DeviceId,
+    app_metadata: AppMetaData,
     sub: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+struct AppMetaData {
+    #[serde(default)]
+    did: Option<DeviceId>,
+    #[serde(default)]
+    dat: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone)]
@@ -94,6 +105,11 @@ impl KeyService {
     }
 }
 
+pub fn debug_token(token: &str) -> Option<String> {
+    let data = insecure_decode::<Value>(token).ok()?;
+    Some(format!("header={:?} claims={}", data.header, data.claims))
+}
+
 #[derive(Clone)]
 pub struct JWTVerifier {
     validation: Validation,
@@ -111,21 +127,25 @@ impl JWTVerifier {
         })
     }
 
-    pub async fn verify(&self, token: &str) -> Result<RequestAuth, jsonwebtoken::errors::Error> {
+    pub async fn verify(&self, token: &str) -> Result<RequestAuth, AppError> {
         let header = decode_header(token)?;
-        let kid = header.clone().kid.ok_or_else(|| {
+        let kid = header.kid.ok_or_else(|| {
             jsonwebtoken::errors::Error::from(jsonwebtoken::errors::ErrorKind::InvalidToken)
         })?;
         if let Ok(key) = self.key_service.lookup(&kid).await {
             let claims = decode::<Claims>(token, &key, &self.validation).map(|v| v.claims)?;
-            Ok(RequestAuth {
-                uid: format!("{}", claims.sub),
-                did: claims.did,
-            })
+            if let Some(did) = claims.app_metadata.did {
+                if claims.app_metadata.dat.is_none() {
+                    return Err(AppError::Unauthorized("Missing or invalid dat".to_string()));
+                }
+                return Ok(RequestAuth {
+                    uid: claims.sub.to_string(),
+                    did: did,
+                });
+            }
+            return Err(AppError::Unauthorized("Missing or invalid did".to_string()));
         } else {
-            Err(jsonwebtoken::errors::Error::from(
-                jsonwebtoken::errors::ErrorKind::InvalidToken,
-            ))
+            Err(AppError::Unauthorized("Bad token".to_string()))
         }
     }
 }

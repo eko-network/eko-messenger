@@ -38,7 +38,10 @@ async fn auth(Extension(jwt): Extension<JWTVerifier>, mut req: Request, next: Ne
                 next.run(req).await
             }
             Err(e) => {
-                debug!(jwt_error = %e);
+                debug!(
+                    jwt_error = %e,
+                    jwt_token = %jwt::debug_token(auth).unwrap_or_else(|| auth.to_string()),
+                );
                 (StatusCode::UNAUTHORIZED, "JWT missing or expired").into_response()
             }
         };
