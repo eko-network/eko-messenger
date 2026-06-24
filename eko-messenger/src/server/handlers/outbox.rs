@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::{
     Activity, AppError, MessengerContext, RequestAuth,
     server::notification::send_push_notifications,
-    types::{activities::ActivityBase, actor_uid, objects::ObjectBase},
+    types::{Object, activities::ActivityBase, actor_uid, objects::ObjectBase},
 };
 
 #[debug_handler]
@@ -91,8 +91,13 @@ pub async fn post_to_outbox(
             let devices = target_devices.clone();
             let title = "New message";
             let body = "Encrypted message";
-            let payload_data =
-                Value::String(general_purpose::STANDARD.encode(create.object.content()));
+
+            let content = match &create.object {
+                Object::ApprovalRequest(_) => todo!(),
+                Object::PrivateMessage(private_message) => &private_message.content,
+                Object::WelcomeMessage(welcome_message) => &welcome_message.content,
+            };
+            let payload_data = Value::String(general_purpose::STANDARD.encode(content));
             let activity_id = create.id.clone();
             let object_id = create.object.id().map(|s| s.to_string());
             tokio::spawn(async move {
