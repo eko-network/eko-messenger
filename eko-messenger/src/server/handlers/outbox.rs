@@ -43,6 +43,18 @@ pub async fn post_to_outbox(
         ));
     }
 
+    if let Activity::Create(create) = &payload
+        && let Object::ApprovalRequest(approval_request) = &create.object
+    {
+        if approval_request.did != claims.did.to_string() {
+            return Err(AppError::Forbidden(
+                "Cannot Request for another device".to_string(),
+            ));
+        }
+    } else {
+        claims.require_device_approval()?;
+    }
+
     if payload.id().is_none() {
         let activity_id = format!("{}/activities/{}", ctx.domain, Uuid::new_v4());
         payload.as_mut().set_id(activity_id);

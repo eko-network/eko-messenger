@@ -135,12 +135,10 @@ impl JWTVerifier {
         if let Ok(key) = self.key_service.lookup(&kid).await {
             let claims = decode::<Claims>(token, &key, &self.validation).map(|v| v.claims)?;
             if let Some(did) = claims.app_metadata.did {
-                if claims.app_metadata.dat.is_none() {
-                    return Err(AppError::Unauthorized("Missing or invalid dat".to_string()));
-                }
                 return Ok(RequestAuth {
                     uid: claims.sub.to_string(),
-                    did: did,
+                    did,
+                    device_approved: claims.app_metadata.dat.is_some(),
                 });
             }
             return Err(AppError::Unauthorized("Missing or invalid did".to_string()));

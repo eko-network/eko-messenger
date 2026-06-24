@@ -39,15 +39,32 @@ pub struct MessengerContext {
 pub struct RequestAuth {
     pub uid: String,
     pub did: crate::devices::DeviceId,
+    pub device_approved: bool,
+}
+
+impl RequestAuth {
+    pub fn require_device_approval(&self) -> Result<(), crate::AppError> {
+        if self.device_approved {
+            Ok(())
+        } else {
+            Err(crate::AppError::DevicePending(
+                "Device not yet approved".into(),
+            ))
+        }
+    }
 }
 
 pub fn protocol_routes() -> Router<MessengerContext> {
     Router::new()
         .route("/users/{uid}/devices", get(get_devices))
         .route("/users/{uid}/devices/{did}/keys", post(take_key))
-        .route("/users/{uid}/outbox", post(post_to_outbox))
         .route("/users/{uid}/inbox", get(get_inbox))
         .route(SOCKET_URL, get(ws_handler))
+}
+
+pub fn outbox_routes() -> Router<MessengerContext> {
+    Router::new()
+        .route("/users/{uid}/outbox", post(post_to_outbox))
 }
 
 pub fn public_routes() -> Router<MessengerContext> {
