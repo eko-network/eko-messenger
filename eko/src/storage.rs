@@ -46,7 +46,7 @@ impl DeviceStore for Storage {
         let rows = sqlx::query(
             r#"
             SELECT id, signer_public_key FROM public.devices
-            WHERE uid = $1
+            WHERE uid = $1 AND approved_at IS NOT NULL
             "#,
         )
         .bind(uid)
@@ -158,6 +158,24 @@ impl ActivityStore for Storage {
         tx.commit().await?;
         Ok(())
     }
+    async fn remove_inbox_entry(&self, object_id: &str, did: DeviceId) -> Result<(), AppError> {
+        sqlx::query(
+            r#"
+            DELETE FROM entries
+            USING messages
+            WHERE entries.message_id = messages.id
+              AND messages.object_id = $1
+              AND entries.did = $2
+            "#,
+        )
+        .bind(object_id)
+        .bind(did.as_uuid())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     async fn insert_delivered(
         &self,
         delivered: &Delivered,
