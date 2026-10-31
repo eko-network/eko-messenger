@@ -36,6 +36,9 @@ pub trait OutboxStore: Send + Sync {}
 #[async_trait]
 pub trait DeviceStore: Send + Sync {
     async fn list_devices_for_user(&self, uid: &str) -> Result<Vec<StoredDevice>, AppError>;
+    /// The user's signed device chain entries, oldest first. They are signed
+    /// by the user's devices and passed through as is.
+    async fn device_chain_for_user(&self, uid: &str) -> Result<Vec<serde_json::Value>, AppError>;
     async fn take_key_package(&self, did: DeviceId) -> Result<Vec<u8>, AppError>;
 }
 

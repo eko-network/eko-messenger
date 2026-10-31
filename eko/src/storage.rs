@@ -60,6 +60,21 @@ impl DeviceStore for Storage {
             })
             .collect())
     }
+    async fn device_chain_for_user(&self, uid: &str) -> Result<Vec<serde_json::Value>, AppError> {
+        let uid =
+            Uuid::parse_str(uid).map_err(|e| AppError::BadRequest(format!("invalid uid: {e}")))?;
+        let entries = sqlx::query_scalar(
+            r#"
+            SELECT entry FROM public.device_chain
+            WHERE uid = $1
+            ORDER BY seq
+            "#,
+        )
+        .bind(uid)
+        .fetch_all(&self.spool)
+        .await?;
+        Ok(entries)
+    }
     async fn take_key_package(&self, did: DeviceId) -> Result<Vec<u8>, AppError> {
         let result: Option<Vec<u8>> = sqlx::query_scalar(
             r#"
