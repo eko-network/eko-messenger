@@ -127,50 +127,29 @@ Upon receiving a `POST` request, the server SHOULD:
   * **Add device**: The client issues a Create activity for an `AddDevice` object. When a new device is added, the user's existing devices SHOULD add the new device to all active MLS groups by issuing a `Commit` (with the new device's `KeyPackage`) and sending a `Welcome` message.
   * **Remove device**: The client issues a Create activity for a `RevokeDevice` object. Remaining devices in the user's active groups MUST issue a `Commit` to remove the revoked device's leaf from the MLS trees.
 
-#### AddDevice
+#### Device chain entries
+The `Devices` collection is an `OrderedCollection` of chain entries, oldest first. Every entry is signed by a device that is valid at that point in the chain, the first entry is self-signed and trusted on first use.
+
 ```json
 {
-  "@context": [
-    "https://www.w3.org/ns/activitystreams",
-    "https://eko.network/ns"
-  ],
   "type": "AddDevice",
-  "id": "https://eko.network/user/devices/actions/<id>",
-  "prev": "<hash of previous node or null if first node>",
-  "did": "urn:uuid:<uuid>",
-  "eko:keyCollection": "https://eko.network/user/user1/device/<uuid>/keys",
-  "identityKey": "<device Ed25519/P-256 publicKey>",
-  "proof": {
-    "type": "DataIntegrityProof",
-    "cryptosuite": "eddsa-jcs-2022",
-    "verificationMethod": "https://eko.network/user/user1#main-key",
-    "proofPurpose": "assertionMethod",
-    "proofValue": "z...."
-  }
+  "actor": "https://eko.network/users/user1",
+  "did": "<uuid>",
+  "identityKey": "<base64 Ed25519 public key, the device's MLS signature key>",
+  "prev": "<base64 hash of the previous entry, null on the first entry>",
+  "signer": "<did of the signing device>",
+  "signature": "<base64 Ed25519 signature>",
+  "keyCollection": "https://eko.network/users/user1/devices/<uuid>/keys"
 }
 ```
 
-#### RevokeDevice
-```json
-{
-  "@context": [
-    "https://www.w3.org/ns/activitystreams",
-    "https://eko.network/ns"
-  ],
-  "type": "RevokeDevice",
-  "id": "https://eko.network/user/devices/actions/<id>",
-  "did": "urn:uuid:<uuid>",
-  "prev": "<hash of previous node>",
-  "proof": {
-    "type": "DataIntegrityProof",
-    "cryptosuite": "eddsa-jcs-2022",
-    "verificationMethod": "https://eko.network/user/user1#main-key",
-    "proofPurpose": "assertionMethod",
-    "proofValue": "z...."
-  }
-}
-```
-To compute the prev hash, clients and server MUST format the node in accordance with RFC 8785 and use SHA-256. To compute the signatures, the client MUST remove both the proof field and the id field, then format the remaining node in compliance with RFC 8785, signing with their identity key.
+`RevokeDevice` entries have the same shape without `identityKey`. A device may revoke itself. An `AddDevice` for a `did` that is already valid replaces its key.
+
+* The signed fields are `type`, `actor`, `did`, `identityKey` (AddDevice only), `prev` and `signer`. The signature is over their RFC 8785 (JCS) form, made with the signer's identity key.
+* `prev` is the SHA-256 of the JCS form of the previous entry's signed fields plus its `signature`.
+* `keyCollection` (and any other field) is added by the server and is not signed. Clients MUST check that a key package taken from it is signed by the device's `identityKey` and names the actor as its credential identity.
+* Clients replay the chain to get the valid devices and MUST only add those to groups. They pin the hash of the last entry per actor, and a chain that contains no entry with the pinned hash (rolled back or replaced) MUST NOT be used until the user accepts the change.
+* The server MUST only append entries whose `prev` is the current head, so concurrent appends cannot fork the chain. When a user has no valid device left, the server MAY start a new chain from a self-signed entry, which other users' clients see as a changed chain.
 
 #### KeyPackages
 

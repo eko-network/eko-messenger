@@ -2,37 +2,41 @@ use crate::{
     DeviceId,
     errors::AppError,
     server::{DEVICE_ENDPOINT, DEVICE_KEYS_ENDPOINT, MessengerContext, USERS_ENDPOINT},
-    types::{KeyPackage, collection::Collection, eko_types::Device},
+    types::{KeyPackage, collection::OrderedCollection},
 };
 use axum::{
     Json, debug_handler,
     extract::{Path, State},
 };
-use tracing::debug;
+use serde_json::Value;
 
+/// The user's device chain. Clients verify it and only trust the devices it
+/// ends with, the server annotates AddDevice entries with where to take the
+/// device's key packages from, which is not part of what is signed.
 #[debug_handler]
 pub async fn get_devices(
     State(ctx): State<MessengerContext>,
     Path(uid): Path<String>,
-) -> Result<Json<Collection<Device>>, AppError> {
+) -> Result<Json<OrderedCollection<Value>>, AppError> {
     let path = format!(
         "{}/{}/{}/{}",
         &ctx.domain, &USERS_ENDPOINT, &uid, &DEVICE_ENDPOINT
     );
-    let fetched_items: Vec<Device> = ctx
-        .storage
-        .list_devices_for_user(&uid)
-        .await?
-        .into_iter()
-        .map(|v| {
-            let id = format!("{}/{}", &path, &v.did.to_string());
-            let collection = format!("{}/{}", &id, &DEVICE_KEYS_ENDPOINT);
-            debug!("{}", collection.to_string());
-            Ok(Device::new(id, v.did, collection, v.public_key))
-        })
-        .collect::<Result<Vec<Device>, url::ParseError>>()?;
-    let items = (!fetched_items.is_empty()).then_some(fetched_items);
-    Ok(Json(Collection::new(path.to_string(), items)))
+    let mut entries = ctx.storage.device_chain_for_user(&uid).await?;
+    for entry in &mut entries {
+        let Some(fields) = entry.as_object_mut() else {
+            continue;
+        };
+        if fields.get("type").and_then(Value::as_str) != Some("AddDevice") {
+            continue;
+        }
+        if let Some(did) = fields.get("did").and_then(Value::as_str) {
+            let collection = format!("{}/{}/{}", &path, did, &DEVICE_KEYS_ENDPOINT);
+            fields.insert("keyCollection".to_string(), Value::String(collection));
+        }
+    }
+    let items = (!entries.is_empty()).then_some(entries);
+    Ok(Json(OrderedCollection::new(path, items)))
 }
 
 #[debug_handler]
