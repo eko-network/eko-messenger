@@ -31,7 +31,7 @@ pub async fn get_devices(
             Ok(Device::new(id, v.did, collection, v.public_key))
         })
         .collect::<Result<Vec<Device>, url::ParseError>>()?;
-    let items = (!fetched_items.is_empty()).then(|| fetched_items);
+    let items = (!fetched_items.is_empty()).then_some(fetched_items);
     Ok(Json(Collection::new(path.to_string(), items)))
 }
 

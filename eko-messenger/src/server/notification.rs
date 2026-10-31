@@ -46,10 +46,10 @@ async fn get_apns_token(config: &ApnsConfig) -> Option<String> {
     let cache = apns_token_cache();
     {
         let guard = cache.lock().await;
-        if let Some((token, expires_at)) = &*guard {
-            if std::time::Instant::now() < *expires_at {
-                return Some(token.clone());
-            }
+        if let Some((token, expires_at)) = &*guard
+            && std::time::Instant::now() < *expires_at
+        {
+            return Some(token.clone());
         }
     }
 
@@ -207,6 +207,7 @@ async fn send_web_push(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn send_apns(
     client: &Client,
     store: &dyn NotificationStore,
@@ -306,6 +307,7 @@ async fn send_apns(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn send_push_notifications(
     client: &Client,
     store: &dyn NotificationStore,

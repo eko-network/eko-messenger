@@ -141,7 +141,7 @@ impl JWTVerifier {
                     device_approved: claims.app_metadata.dat.is_some(),
                 });
             }
-            return Err(AppError::Unauthorized("Missing or invalid did".to_string()));
+            Err(AppError::Unauthorized("Missing or invalid did".to_string()))
         } else {
             Err(AppError::Unauthorized("Bad token".to_string()))
         }

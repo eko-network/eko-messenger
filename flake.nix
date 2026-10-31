@@ -20,11 +20,17 @@
         "aarch64-darwin"
       ];
 
-      perSystem = {pkgs, ...}: let
+      perSystem = {
+        pkgs,
+        lib,
+        ...
+      }: let
         port = 3000;
       in {
         devenv.shells.default = {
           packages = with pkgs; [sqlx-cli];
+          # devenv containers need extra flake inputs and break `nix flake check`
+          containers = lib.mkForce {};
           languages.rust.enable = true;
 
           services.postgres = {

@@ -28,7 +28,6 @@ pub struct Create {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
-
 pub enum Activity {
     Create(Create),
     Delivered(Delivered),
@@ -77,7 +76,7 @@ impl ActivityBase for Activity {
 }
 
 impl Activity {
-    pub fn as_mut(&mut self) -> &mut dyn ActivityBaseMut {
+    pub fn base_mut(&mut self) -> &mut dyn ActivityBaseMut {
         match self {
             Activity::Create(v) => v,
             Activity::Delivered(v) => v,
