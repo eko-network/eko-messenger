@@ -68,11 +68,20 @@ pub async fn post_to_outbox(
             }
 
             let mut target_devices = Vec::new();
+            // the sender's other devices get the activity silently, no notification
+            let mut push_devices = Vec::new();
             let mut delivery_futures = Vec::new();
             for recipient_url in create.to() {
                 let recipient_uid = actor_uid(recipient_url)?;
                 let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
                 for device in devices {
+                    // the sending device already has the activity
+                    if device.did == claims.did {
+                        continue;
+                    }
+                    if recipient_uid != claims.uid {
+                        push_devices.push(device.did);
+                    }
                     delivery_futures.push(ctx.sockets.try_websocket_delivery(
                         Activity::Create(create.clone()),
                         recipient_uid.clone(),
@@ -86,41 +95,60 @@ pub async fn post_to_outbox(
             ctx.storage.insert_create(create, &target_devices).await?;
             join_all(delivery_futures).await;
 
-            let client = reqwest::Client::builder().use_rustls_tls().build()?;
-            let storage = ctx.storage.clone();
-            let devices = target_devices.clone();
-            let title = "New message";
-            let body = "Encrypted message";
-
             let content = match &create.object {
-                Object::ApprovalRequest(_) => todo!(),
-                Object::PrivateMessage(private_message) => &private_message.content,
-                Object::WelcomeMessage(welcome_message) => &welcome_message.content,
+                // approval requests carry no MLS payload for the notification service to decrypt,
+                // they are only delivered over the websocket / inbox
+                Object::ApprovalRequest(_) => None,
+                Object::PrivateMessage(private_message) => Some(&private_message.content),
+                Object::WelcomeMessage(welcome_message) => Some(&welcome_message.content),
             };
-            let payload_data = Value::String(general_purpose::STANDARD.encode(content));
-            let activity_id = create.id.clone();
-            let object_id = create.object.id().map(|s| s.to_string());
-            tokio::spawn(async move {
-                send_push_notifications(
-                    &client,
-                    storage.as_ref(),
-                    &devices,
-                    title,
-                    body,
-                    &payload_data,
-                    activity_id,
-                    object_id,
-                )
-                .await;
-            });
+            if let Some(content) = content {
+                let client = reqwest::Client::builder().use_rustls_tls().build()?;
+                let storage = ctx.storage.clone();
+                let devices = push_devices;
+                let title = "New message";
+                let body = "Encrypted message";
+                let payload_data = Value::String(general_purpose::STANDARD.encode(content));
+                let activity_id = create.id.clone();
+                let object_id = create.object.id().map(|s| s.to_string());
+                tokio::spawn(async move {
+                    send_push_notifications(
+                        &client,
+                        storage.as_ref(),
+                        &devices,
+                        title,
+                        body,
+                        &payload_data,
+                        activity_id,
+                        object_id,
+                    )
+                    .await;
+                });
+            }
         }
         Activity::Delivered(delivered) => {
+            // An ack for an activity sent by another device of the same user only clears this
+            // device's inbox entry. It must not mark the message delivered for its recipients.
+            let mut recipient_uids = Vec::with_capacity(delivered.to().len());
+            for recipient_url in delivered.to() {
+                recipient_uids.push(actor_uid(recipient_url)?);
+            }
+            if recipient_uids.iter().all(|r| *r == claims.uid) {
+                ctx.storage
+                    .remove_inbox_entry(&delivered.object, claims.did)
+                    .await?;
+                return Ok((StatusCode::CREATED, Json(payload)).into_response());
+            }
+
             let mut target_devices = Vec::new();
             let mut delivery_futures = Vec::new();
             for recipient_url in delivered.to() {
                 let recipient_uid = actor_uid(recipient_url)?;
                 let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
                 for device in devices {
+                    if device.did == claims.did {
+                        continue;
+                    }
                     delivery_futures.push(ctx.sockets.try_websocket_delivery(
                         Activity::Delivered(delivered.clone()),
                         recipient_uid.clone(),

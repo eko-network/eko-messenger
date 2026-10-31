@@ -18,6 +18,10 @@ pub trait ActivityStore: Send + Sync {
     /// Stores a create this should mark the message as needing delivery for all devices in the
     async fn insert_create(&self, create: &Create, devices: &[DeviceId]) -> Result<(), AppError>;
 
+    /// Removes a single device's inbox entry for an object without marking it delivered. Used
+    /// when a device acknowledges an activity sent by another device of the same user.
+    async fn remove_inbox_entry(&self, object_id: &str, did: DeviceId) -> Result<(), AppError>;
+
     async fn insert_delivered(
         &self,
         delivered: &Delivered,

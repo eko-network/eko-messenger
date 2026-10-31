@@ -63,8 +63,7 @@ pub fn protocol_routes() -> Router<MessengerContext> {
 }
 
 pub fn outbox_routes() -> Router<MessengerContext> {
-    Router::new()
-        .route("/users/{uid}/outbox", post(post_to_outbox))
+    Router::new().route("/users/{uid}/outbox", post(post_to_outbox))
 }
 
 pub fn public_routes() -> Router<MessengerContext> {
