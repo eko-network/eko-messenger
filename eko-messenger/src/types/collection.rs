@@ -51,7 +51,7 @@ impl<T> Collection<T> {
             type_field: "Collection".to_string(),
             id,
             total_items: total,
-            items: items,
+            items,
         }
     }
 }

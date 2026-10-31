@@ -57,7 +57,7 @@ pub async fn post_to_outbox(
 
     if payload.id().is_none() {
         let activity_id = format!("{}/activities/{}", ctx.domain, Uuid::new_v4());
-        payload.as_mut().set_id(activity_id);
+        payload.base_mut().set_id(activity_id);
     }
 
     match &mut payload {

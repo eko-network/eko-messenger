@@ -73,8 +73,8 @@ pub fn public_routes() -> Router<MessengerContext> {
 pub fn context() -> Value {
     let mut m = Map::new();
     m.insert("ecp".to_string(), Value::String(ECP_CONTEXT.to_string()));
-    return Value::Array(vec![
+    Value::Array(vec![
         Value::String(ACTIVITY_STREAMS_CONTEXT.to_string()),
         Value::Object(m),
-    ]);
+    ])
 }

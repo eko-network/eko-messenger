@@ -56,6 +56,6 @@ jobs:
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features rustls,postgres
       - name: Run migrations
-        run: sqlx migrate run
+        run: sqlx migrate run --source eko/migrations
       - name: Test
         run: cargo test
