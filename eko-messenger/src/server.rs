@@ -14,7 +14,9 @@ pub use websocket::WebSocketService;
 
 use crate::{
     server::{
-        handlers::{capabilities_handler, get_inbox, post_to_outbox, take_key},
+        handlers::{
+            capabilities_handler, claim_epoch, get_inbox, post_to_outbox, release_epoch, take_key,
+        },
         websocket::ws_handler,
     },
     storage::Storage,
@@ -59,6 +61,10 @@ pub fn protocol_routes() -> Router<MessengerContext> {
         .route("/users/{uid}/devices", get(get_devices))
         .route("/users/{uid}/devices/{did}/keys", post(take_key))
         .route("/users/{uid}/inbox", get(get_inbox))
+        .route(
+            "/groups/{group_id}/claim",
+            post(claim_epoch).delete(release_epoch),
+        )
         .route(SOCKET_URL, get(ws_handler))
 }
 

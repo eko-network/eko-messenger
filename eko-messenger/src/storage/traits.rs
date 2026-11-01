@@ -2,7 +2,7 @@ use crate::{
     Activity,
     devices::DeviceId,
     errors::AppError,
-    storage::models::{StoredDevice, StoredGroupState},
+    storage::models::{GroupMessage, StoredDevice, StoredGroupState},
     types::{Create, Delivered},
 };
 use async_trait::async_trait;
@@ -16,7 +16,25 @@ pub trait ActivityStore: Send + Sync {
     async fn inbox_activities(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
     //
     /// Stores a create this should mark the message as needing delivery for all devices in the
-    async fn insert_create(&self, create: &Create, devices: &[DeviceId]) -> Result<(), AppError>;
+    ///
+    /// A `group` commit is only stored when the sending device claimed its epoch with
+    /// [`ActivityStore::claim_epoch`], and moves the group to the next epoch, otherwise this fails
+    /// with [`AppError::Conflict`] and nothing is stored.
+    async fn insert_create(
+        &self,
+        create: &Create,
+        devices: &[DeviceId],
+        group: Option<&GroupMessage<'_>>,
+    ) -> Result<(), AppError>;
+
+    /// Reserves the group's current `epoch` for `did` to commit to, for a short while, so the
+    /// group's devices never commit to the same epoch and apply different commits. Fails with
+    /// [`AppError::Conflict`] when the group is at another epoch or another device holds it.
+    async fn claim_epoch(&self, group_id: &[u8], epoch: u64, did: DeviceId)
+    -> Result<(), AppError>;
+
+    /// Gives up `did`'s claim on the group's epoch, when it turned out to have nothing to commit.
+    async fn release_epoch(&self, group_id: &[u8], did: DeviceId) -> Result<(), AppError>;
 
     /// Removes a single device's inbox entry for an object without marking it delivered. Used
     /// when a device acknowledges an activity sent by another device of the same user.

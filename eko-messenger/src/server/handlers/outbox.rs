@@ -12,8 +12,9 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
-    Activity, AppError, MessengerContext, RequestAuth,
+    Activity, AppError, MessengerContext, RequestAuth, mls,
     server::notification::send_push_notifications,
+    storage::models::GroupMessage,
     types::{Object, activities::ActivityBase, actor_uid, objects::ObjectBase},
 };
 
@@ -90,9 +91,25 @@ pub async fn post_to_outbox(
                     target_devices.push(device.did);
                 }
             }
+            let framing = match &create.object {
+                Object::PrivateMessage(private_message) => {
+                    Some(mls::framing(&private_message.content).ok_or_else(|| {
+                        AppError::BadRequest("Not an MLS public or private message".into())
+                    })?)
+                }
+                _ => None,
+            };
+            let group = framing.as_ref().map(|framing| GroupMessage {
+                framing,
+                sender_did: claims.did,
+            });
+
             // NOTE blocking the websocket push until the create activity is stored to remove
-            // the edge case where delivered is processed before the activity hits the inbox
-            ctx.storage.insert_create(create, &target_devices).await?;
+            // the edge case where delivered is processed before the activity hits the inbox.
+            // A commit that lost its epoch fails here, before anything is delivered.
+            ctx.storage
+                .insert_create(create, &target_devices, group.as_ref())
+                .await?;
             join_all(delivery_futures).await;
 
             let content = match &create.object {

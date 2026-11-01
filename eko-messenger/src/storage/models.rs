@@ -109,3 +109,10 @@ pub struct StoredGroupState {
     pub encrypted_content: Vec<u8>,
     pub encoding: String,
 }
+
+/// A `PrivateMessage` as it stands in its group's commit order.
+#[derive(Debug)]
+pub struct GroupMessage<'a> {
+    pub framing: &'a crate::mls::Framing,
+    pub sender_did: DeviceId,
+}
