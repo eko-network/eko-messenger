@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT messages.id AS message_id, activity_type, activity\n            FROM messages\n            JOIN entries ON messages.id = entries.message_id\n            WHERE entries.did = $1\n            ORDER BY messages.created_at ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "message_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "activity_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "activity_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "activity",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "activity"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a358ef81f18135567e9e4d02a37bccbc8c4f8700deab54ac3b9440c21bd97912"
+}

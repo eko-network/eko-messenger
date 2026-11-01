@@ -1,6 +1,0 @@
-CREATE TABLE notifications (
-  did UUID PRIMARY KEY REFERENCES devices (did) ON DELETE CASCADE,
-  endpoint TEXT NOT NULL,
-  p256dh TEXT NOT NULL,
-  auth TEXT NOT NULL
-);

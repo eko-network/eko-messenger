@@ -1,0 +1,185 @@
+use axum::{
+    Extension, Json, debug_handler,
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use base64::Engine;
+use base64::engine::general_purpose;
+use futures::future::join_all;
+use serde_json::Value;
+use tracing::{debug, info};
+use uuid::Uuid;
+
+use crate::{
+    Activity, AppError, MessengerContext, RequestAuth, mls,
+    server::notification::send_push_notifications,
+    storage::models::GroupMessage,
+    types::{Object, activities::ActivityBase, actor_uid, objects::ObjectBase},
+};
+
+#[debug_handler]
+pub async fn post_to_outbox(
+    State(ctx): State<MessengerContext>,
+    Path(uid): Path<String>,
+    Extension(claims): Extension<RequestAuth>,
+    Json(mut payload): Json<Activity>,
+) -> Result<impl IntoResponse, AppError> {
+    debug!("{:?}", payload);
+    if claims.uid != uid {
+        return Err(AppError::Forbidden(
+            "Cannot post to another user's outbox".to_string(),
+        ));
+    }
+
+    let extracted_actor_uid = actor_uid(payload.actor())?;
+    if claims.uid != extracted_actor_uid {
+        info!(
+            "Stopped {} from sending a message as {}",
+            claims.uid,
+            payload.actor()
+        );
+        return Err(AppError::Forbidden(
+            "Messages may not be sent on behalf of other users".into(),
+        ));
+    }
+
+    if let Activity::Create(create) = &payload
+        && let Object::ApprovalRequest(approval_request) = &create.object
+    {
+        if approval_request.did != claims.did.to_string() {
+            return Err(AppError::Forbidden(
+                "Cannot Request for another device".to_string(),
+            ));
+        }
+    } else {
+        claims.require_device_approval()?;
+    }
+
+    if payload.id().is_none() {
+        let activity_id = format!("{}/activities/{}", ctx.domain, Uuid::new_v4());
+        payload.base_mut().set_id(activity_id);
+    }
+
+    match &mut payload {
+        Activity::Create(create) => {
+            if create.object.id().is_none() {
+                let object_id = format!("{}/objects/{}", ctx.domain, Uuid::new_v4());
+                create.object.as_base_mut().set_id(object_id);
+            }
+
+            let mut target_devices = Vec::new();
+            // the sender's other devices get the activity silently, no notification
+            let mut push_devices = Vec::new();
+            let mut delivery_futures = Vec::new();
+            for recipient_url in create.to() {
+                let recipient_uid = actor_uid(recipient_url)?;
+                let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
+                for device in devices {
+                    // the sending device already has the activity
+                    if device.did == claims.did {
+                        continue;
+                    }
+                    if recipient_uid != claims.uid {
+                        push_devices.push(device.did);
+                    }
+                    delivery_futures.push(ctx.sockets.try_websocket_delivery(
+                        Activity::Create(create.clone()),
+                        recipient_uid.clone(),
+                        device.did,
+                    ));
+                    target_devices.push(device.did);
+                }
+            }
+            let framing = match &create.object {
+                Object::PrivateMessage(private_message) => {
+                    Some(mls::framing(&private_message.content).ok_or_else(|| {
+                        AppError::BadRequest("Not an MLS public or private message".into())
+                    })?)
+                }
+                _ => None,
+            };
+            let group = framing.as_ref().map(|framing| GroupMessage {
+                framing,
+                sender_did: claims.did,
+            });
+
+            // NOTE blocking the websocket push until the create activity is stored to remove
+            // the edge case where delivered is processed before the activity hits the inbox.
+            // A commit that lost its epoch fails here, before anything is delivered.
+            ctx.storage
+                .insert_create(create, &target_devices, group.as_ref())
+                .await?;
+            join_all(delivery_futures).await;
+
+            let content = match &create.object {
+                // approval requests carry no MLS payload for the notification service to decrypt,
+                // they are only delivered over the websocket / inbox
+                Object::ApprovalRequest(_) => None,
+                Object::PrivateMessage(private_message) => Some(&private_message.content),
+                Object::WelcomeMessage(welcome_message) => Some(&welcome_message.content),
+            };
+            if let Some(content) = content {
+                let client = reqwest::Client::builder().use_rustls_tls().build()?;
+                let storage = ctx.storage.clone();
+                let devices = push_devices;
+                let title = "New message";
+                let body = "Encrypted message";
+                let payload_data = Value::String(general_purpose::STANDARD.encode(content));
+                let activity_id = create.id.clone();
+                let object_id = create.object.id().map(|s| s.to_string());
+                tokio::spawn(async move {
+                    send_push_notifications(
+                        &client,
+                        storage.as_ref(),
+                        &devices,
+                        title,
+                        body,
+                        &payload_data,
+                        activity_id,
+                        object_id,
+                    )
+                    .await;
+                });
+            }
+        }
+        Activity::Delivered(delivered) => {
+            // An ack for an activity sent by another device of the same user only clears this
+            // device's inbox entry. It must not mark the message delivered for its recipients.
+            let mut recipient_uids = Vec::with_capacity(delivered.to().len());
+            for recipient_url in delivered.to() {
+                recipient_uids.push(actor_uid(recipient_url)?);
+            }
+            if recipient_uids.iter().all(|r| *r == claims.uid) {
+                ctx.storage
+                    .remove_inbox_entry(&delivered.object, claims.did)
+                    .await?;
+                return Ok((StatusCode::CREATED, Json(payload)).into_response());
+            }
+
+            let mut target_devices = Vec::new();
+            let mut delivery_futures = Vec::new();
+            for recipient_url in delivered.to() {
+                let recipient_uid = actor_uid(recipient_url)?;
+                let devices = ctx.storage.list_devices_for_user(&recipient_uid).await?;
+                for device in devices {
+                    if device.did == claims.did {
+                        continue;
+                    }
+                    delivery_futures.push(ctx.sockets.try_websocket_delivery(
+                        Activity::Delivered(delivered.clone()),
+                        recipient_uid.clone(),
+                        device.did,
+                    ));
+                    target_devices.push(device.did);
+                }
+            }
+            join_all(delivery_futures).await;
+            ctx.storage
+                .insert_delivered(delivered, &target_devices, claims.did)
+                .await?;
+        }
+    }
+
+    Ok((StatusCode::CREATED, Json(payload)).into_response())
+}
