@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Json as AxumJson, Response},
 };
 use serde_json::json;
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(Debug)]
 pub enum AppError {
@@ -11,6 +11,9 @@ pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
     NotFound(String),
+    /// The request lost a race, e.g. for a group's epoch, and can be retried
+    /// once the caller has caught up.
+    Conflict(String),
     DevicePending(String),
     InternalError(anyhow::Error),
 }
@@ -22,6 +25,7 @@ impl std::fmt::Display for AppError {
             AppError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
             AppError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
             AppError::NotFound(msg) => write!(f, "Not Found: {}", msg),
+            AppError::Conflict(msg) => write!(f, "Conflict: {}", msg),
             AppError::DevicePending(msg) => write!(f, "Device Pending: {}", msg),
             AppError::InternalError(e) => write!(f, "Internal Error: {}", e),
         }
@@ -46,6 +50,10 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => {
                 error!("Not found: {}", msg);
                 (StatusCode::NOT_FOUND, msg)
+            }
+            AppError::Conflict(msg) => {
+                debug!("Conflict: {}", msg);
+                (StatusCode::CONFLICT, msg)
             }
             AppError::DevicePending(msg) => {
                 error!("Device pending approval: {}", msg);

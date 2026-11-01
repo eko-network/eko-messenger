@@ -4,9 +4,10 @@ use eko_messenger::{
     Activity, ActivityStore, Create,
     devices::DeviceId,
     errors::AppError,
+    mls::ContentType,
     storage::{
         DeviceStore,
-        models::{DeviceNotificationInfo, StoredDevice},
+        models::{DeviceNotificationInfo, GroupMessage, StoredDevice},
         traits::NotificationStore,
     },
     types::{Delivered, objects::ObjectBase},
@@ -141,8 +142,55 @@ impl ActivityStore for Storage {
         Ok(activities)
     }
 
-    async fn insert_create(&self, create: &Create, devices: &[DeviceId]) -> Result<(), AppError> {
+    async fn insert_create(
+        &self,
+        create: &Create,
+        devices: &[DeviceId],
+        group: Option<&GroupMessage<'_>>,
+    ) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await?;
+
+        if let Some(group) = group {
+            let framing = group.framing;
+            if framing.content_type == ContentType::Commit {
+                // locks the row until the commit is stored, so the next epoch's commit, and
+                // whatever is sent in it, lands after this one in every inbox
+                let advanced = sqlx::query(
+                    r#"
+                    UPDATE group_epochs
+                    SET epoch = epoch + 1, claimed_by = NULL, claimed_until = NULL
+                    WHERE group_id = $1 AND epoch = $2 AND claimed_by = $3
+                    "#,
+                )
+                .bind(&framing.group_id)
+                .bind(framing.epoch as i64)
+                .bind(group.sender_did.as_uuid())
+                .execute(&mut *tx)
+                .await?;
+                if advanced.rows_affected() == 0 {
+                    return Err(AppError::Conflict(format!(
+                        "Epoch {} of the group is not claimed by this device",
+                        framing.epoch
+                    )));
+                }
+            } else {
+                // a group's first commit adds its members and is never sent, so the group can
+                // be ahead of where it was first seen
+                sqlx::query(
+                    r#"
+                    INSERT INTO group_epochs (group_id, epoch)
+                    VALUES ($1, $2)
+                    ON CONFLICT (group_id) DO UPDATE
+                    SET epoch = EXCLUDED.epoch, claimed_by = NULL, claimed_until = NULL
+                    WHERE EXCLUDED.epoch > group_epochs.epoch
+                    "#,
+                )
+                .bind(&framing.group_id)
+                .bind(framing.epoch as i64)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
 
         let message_id: i32 = sqlx::query_scalar!(
             r#"
@@ -173,6 +221,58 @@ impl ActivityStore for Storage {
         tx.commit().await?;
         Ok(())
     }
+    async fn claim_epoch(
+        &self,
+        group_id: &[u8],
+        epoch: u64,
+        did: DeviceId,
+    ) -> Result<(), AppError> {
+        let claimed = sqlx::query(
+            r#"
+            INSERT INTO group_epochs (group_id, epoch, claimed_by, claimed_until)
+            VALUES ($1, $2, $3, now() + interval '30 seconds')
+            ON CONFLICT (group_id) DO UPDATE
+            SET claimed_by = EXCLUDED.claimed_by, claimed_until = EXCLUDED.claimed_until
+            WHERE group_epochs.epoch = EXCLUDED.epoch
+              AND (group_epochs.claimed_by IS NULL
+                OR group_epochs.claimed_by = EXCLUDED.claimed_by
+                OR group_epochs.claimed_until < now())
+            "#,
+        )
+        .bind(group_id)
+        .bind(epoch as i64)
+        .bind(did.as_uuid())
+        .execute(&self.pool)
+        .await?;
+        if claimed.rows_affected() == 1 {
+            return Ok(());
+        }
+
+        let current: i64 = sqlx::query_scalar("SELECT epoch FROM group_epochs WHERE group_id = $1")
+            .bind(group_id)
+            .fetch_one(&self.pool)
+            .await?;
+        Err(AppError::Conflict(if current as u64 != epoch {
+            format!("The group is at epoch {current}, not {epoch}")
+        } else {
+            format!("Epoch {epoch} is claimed by another device")
+        }))
+    }
+
+    async fn release_epoch(&self, group_id: &[u8], did: DeviceId) -> Result<(), AppError> {
+        sqlx::query(
+            r#"
+            UPDATE group_epochs SET claimed_by = NULL, claimed_until = NULL
+            WHERE group_id = $1 AND claimed_by = $2
+            "#,
+        )
+        .bind(group_id)
+        .bind(did.as_uuid())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn remove_inbox_entry(&self, object_id: &str, did: DeviceId) -> Result<(), AppError> {
         sqlx::query(
             r#"

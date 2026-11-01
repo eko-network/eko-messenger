@@ -13,6 +13,16 @@ CREATE TABLE entries (
   did UUID NOT NULL
 );
 
+-- Where each MLS group is, so every device applies its commits in the same
+-- order: a device claims the current epoch before committing, and only its
+-- commit for that epoch is accepted.
+CREATE TABLE group_epochs (
+  group_id BYTEA PRIMARY KEY,
+  epoch BIGINT NOT NULL,
+  claimed_by UUID,
+  claimed_until TIMESTAMP WITH TIME ZONE
+);
+
 CREATE OR REPLACE FUNCTION public.insert_delivered(
     p_sender_did UUID,
     p_target_object_id TEXT,
