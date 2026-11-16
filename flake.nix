@@ -7,8 +7,14 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
-  outputs = inputs @ {flake-parts, ...}:
+  outputs = inputs @ {
+    flake-parts,
+    self,
+    ...
+  }:
     flake-parts.lib.mkFlake {inherit inputs;} {
+      flake.nixosModules.default = import ./nix/module.nix {inherit self;};
+
       imports = [
         inputs.devenv.flakeModule
       ];
@@ -27,6 +33,8 @@
       }: let
         port = 3000;
       in {
+        packages.default = import ./nix/package.nix {inherit pkgs;};
+
         devenv.shells.default = {
           packages = with pkgs; [sqlx-cli];
           # devenv containers need extra flake inputs and break `nix flake check`
