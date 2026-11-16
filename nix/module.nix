@@ -18,12 +18,9 @@ in {
       type = lib.types.package;
       default = let
         system = pkgs.stdenv.hostPlatform.system;
-        packages = self.packages.${system} or {};
       in
-        if cfg.authProvider == "firebase"
-        then packages.firebase or (pkgs.callPackage ./package.nix {authFeature = "auth-firebase";})
-        else packages.default or (pkgs.callPackage ./package.nix {});
-      description = "The eko-messenger package to use";
+        self.packages.${system}.default or (pkgs.callPackage ./package.nix {});
+      description = "The eko package to use";
     };
 
     port = lib.mkOption {
@@ -38,28 +35,13 @@ in {
       description = "Domain name for the service";
     };
 
-    authProvider = lib.mkOption {
-      type = lib.types.enum ["oidc" "firebase"];
-      default = "oidc";
-      description = "The identity provider to use for authentication";
-    };
-
-    firebaseServiceAccount = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Path to Firebase service account JSON";
+    listenAddr = lib.mkOption {
+      type = lib.types.str;
+      default = "127.0.0.1";
+      description = "The address the server will bind to";
     };
 
     database = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = ''
-          Whether to automatically configure PostgreSQL database.
-          If disabled, you must manually set databaseUrl.
-        '';
-      };
-
       name = lib.mkOption {
         type = lib.types.str;
         default = defaultDbName;
@@ -75,43 +57,66 @@ in {
       createLocally = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Whether to create the database and user locally";
+        description = ''
+          Whether to create the database and user locally.
+          If disabled, you must set databaseUrl.
+        '';
       };
     };
 
     databaseUrl = lib.mkOption {
       type = lib.types.str;
       default = defaultDbUrl;
-      description = "PostgreSQL database URL";
+      description = "PostgreSQL URL for the messenger database (migrated on startup)";
     };
 
-    ipSource = lib.mkOption {
+    jwtJwksUrl = lib.mkOption {
       type = lib.types.str;
-      default = "ConnectInfo";
-      description = "IP source configuration";
+      example = "https://example.supabase.co/auth/v1/.well-known/jwks.json";
+      description = "JWKS endpoint used to verify client JWTs";
     };
 
-    listenAddr = lib.mkOption {
-      type = lib.types.str;
-      default = "127.0.0.1";
-      description = "The address the server will bind to";
+    environmentFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = "/run/secrets/eko-messenger.env";
+      description = ''
+        File with secret environment variables, kept out of the Nix store.
+        Must set SUPABASE_DB_URL, and may set VAPID_PRIVATE_KEY,
+        VAPID_PUBLIC_KEY and the APNS_* variables.
+      '';
     };
 
-    jwtSecret = lib.mkOption {
-      type = lib.types.str;
-      description = "Secret for JWT signing";
+    apns = {
+      teamId = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Apple developer team ID for push notifications";
+      };
+
+      keyId = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "APNs auth key ID (the key itself goes in environmentFile as APNS_PRIVATE_KEY)";
+      };
+
+      bundleId = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "App bundle ID used as the APNs topic";
+      };
+
+      sandbox = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Whether to use the APNs sandbox environment";
+      };
     };
 
     logLevel = lib.mkOption {
       type = lib.types.str;
       default = "info";
       description = "Rust log level";
-    };
-
-    vapidKeyPath = lib.mkOption {
-      type = lib.types.str;
-      default = "/var/lib/eko-messenger/vapid.pem";
-      description = "Path to a .pem file for notification encryption";
     };
   };
 
@@ -132,18 +137,21 @@ in {
       description = "Eko Messenger Service";
       wantedBy = ["multi-user.target"];
       after =
-        ["network.target"]
+        ["network-online.target"]
         ++ lib.optional cfg.database.createLocally "postgresql.service";
+      wants = ["network-online.target"];
       requires = lib.optional cfg.database.createLocally "postgresql.service";
 
       serviceConfig = {
         Type = "simple";
         DynamicUser = true;
+        # peer auth over the postgres socket needs the unix user to match the db user
         User = lib.mkIf cfg.database.createLocally cfg.database.user;
         Restart = "on-failure";
         RestartSec = "5s";
         StartLimitBurst = 3;
-        ExecStart = "${cfg.package}/bin/eko-messenger";
+        ExecStart = lib.getExe cfg.package;
+        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectSystem = "strict";
@@ -157,15 +165,14 @@ in {
           DATABASE_URL = cfg.databaseUrl;
           PORT = toString cfg.port;
           DOMAIN = cfg.domain;
-          IP_SOURCE = cfg.ipSource;
           LISTEN_ADDR = cfg.listenAddr;
+          JWT_JWKS_URL = cfg.jwtJwksUrl;
           RUST_LOG = cfg.logLevel;
-          JWT_SECRET = cfg.jwtSecret;
-          VAPID_KEY_PATH = cfg.vapidKeyPath;
+          APNS_USE_SANDBOX = lib.boolToString cfg.apns.sandbox;
         }
-        // lib.optionalAttrs (cfg.firebaseServiceAccount != null) {
-          GOOGLE_APPLICATION_CREDENTIALS = cfg.firebaseServiceAccount;
-        };
+        // lib.optionalAttrs (cfg.apns.teamId != null) {APNS_TEAM_ID = cfg.apns.teamId;}
+        // lib.optionalAttrs (cfg.apns.keyId != null) {APNS_KEY_ID = cfg.apns.keyId;}
+        // lib.optionalAttrs (cfg.apns.bundleId != null) {APNS_BUNDLE_ID = cfg.apns.bundleId;};
     };
   };
 }
