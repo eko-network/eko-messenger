@@ -1,11 +1,15 @@
 use std::sync::OnceLock;
 
+use aes_gcm::{Aes128Gcm, KeyInit, aead::Aead};
 use base64::Engine;
 use chrono::Utc;
+use hkdf::Hkdf;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use p256::pkcs8::EncodePrivateKey;
+use p256::{EncodedPoint, PublicKey, SecretKey, ecdh::diffie_hellman, pkcs8::EncodePrivateKey};
+use rand_core::{OsRng, RngCore};
 use reqwest::Client;
 use serde_json::{Map, Value};
+use sha2::Sha256;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -107,13 +111,91 @@ fn vapid_public_key_b64() -> String {
     std::env::var("VAPID_PUBLIC_KEY").unwrap_or_default()
 }
 
+/// Push services accept at most 4096 bytes of encrypted body (RFC 8030 / 8291).
+const WEB_PUSH_MAX_BODY: usize = 4096;
+const WEB_PUSH_RECORD_SIZE: u32 = 4096;
+
+fn decode_b64_key(value: &str) -> Option<Vec<u8>> {
+    let trimmed = value.trim_end_matches('=');
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(trimmed)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(trimmed))
+        .ok()
+}
+
+fn hkdf_expand<const N: usize>(prk: &Hkdf<Sha256>, info: &[u8]) -> Option<[u8; N]> {
+    let mut out = [0u8; N];
+    prk.expand(info, &mut out).ok()?;
+    Some(out)
+}
+
+/// Encrypts a single-record `aes128gcm` Web Push body as described in RFC 8291.
+/// The ephemeral key and salt are passed in so the output is reproducible in tests.
+fn encrypt_aes128gcm(
+    ua_public: &[u8],
+    auth_secret: &[u8],
+    as_secret: &SecretKey,
+    salt: &[u8; 16],
+    plaintext: &[u8],
+) -> Option<Vec<u8>> {
+    let ua_key = PublicKey::from_sec1_bytes(ua_public).ok()?;
+    let ua_public = EncodedPoint::from(ua_key);
+    let as_public = EncodedPoint::from(as_secret.public_key());
+
+    let shared = diffie_hellman(as_secret.to_nonzero_scalar(), ua_key.as_affine());
+
+    let mut key_info = b"WebPush: info\0".to_vec();
+    key_info.extend_from_slice(ua_public.as_bytes());
+    key_info.extend_from_slice(as_public.as_bytes());
+    let ikm: [u8; 32] = hkdf_expand(
+        &Hkdf::<Sha256>::new(Some(auth_secret), shared.raw_secret_bytes()),
+        &key_info,
+    )?;
+
+    let prk = Hkdf::<Sha256>::new(Some(salt), &ikm);
+    let cek: [u8; 16] = hkdf_expand(&prk, b"Content-Encoding: aes128gcm\0")?;
+    let nonce: [u8; 12] = hkdf_expand(&prk, b"Content-Encoding: nonce\0")?;
+
+    // 0x02 marks the last (and only) record, no padding
+    let mut record = plaintext.to_vec();
+    record.push(0x02);
+    let ciphertext = Aes128Gcm::new(&cek.into())
+        .encrypt(&nonce.into(), record.as_slice())
+        .ok()?;
+
+    let mut out = Vec::with_capacity(16 + 4 + 1 + 65 + ciphertext.len());
+    out.extend_from_slice(salt);
+    out.extend_from_slice(&WEB_PUSH_RECORD_SIZE.to_be_bytes());
+    out.push(as_public.as_bytes().len() as u8);
+    out.extend_from_slice(as_public.as_bytes());
+    out.extend_from_slice(&ciphertext);
+    Some(out)
+}
+
+fn encrypt_web_push(p256dh: &str, auth: &str, plaintext: &[u8]) -> Option<Vec<u8>> {
+    let ua_public = decode_b64_key(p256dh)?;
+    let auth_secret = decode_b64_key(auth)?;
+    let mut salt = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    encrypt_aes128gcm(
+        &ua_public,
+        &auth_secret,
+        &SecretKey::random(&mut OsRng),
+        &salt,
+        plaintext,
+    )
+}
+
+/// The MLS ciphertext is left out because welcome and commit messages easily exceed
+/// the 4KB Web Push limit. Clients fetch their inbox when they get this push.
 async fn send_web_push(
     client: &Client,
     store: &dyn NotificationStore,
     device: &DeviceNotificationInfo,
     title: &str,
     body: &str,
-    payload_data: &Value,
+    activity_id: &str,
+    object_id: &str,
 ) {
     let sub: Map<String, Value> = match serde_json::from_str(&device.token) {
         Ok(v) => v,
@@ -134,20 +216,45 @@ async fn send_web_push(
         }
     };
 
-    let _keys = match sub.get("keys").and_then(|v| v.as_object()) {
-        Some(k) => k.clone(),
-        None => {
+    let keys = sub.get("keys").and_then(|v| v.as_object());
+    let (p256dh, auth) = match keys.map(|k| (k.get("p256dh"), k.get("auth"))) {
+        Some((Some(Value::String(p256dh)), Some(Value::String(auth)))) => (p256dh, auth),
+        _ => {
             error!("WebPush Error: missing keys for device {}", device.did);
             return;
         }
     };
 
-    let payload = serde_json::to_vec(&serde_json::json!({
+    // same shape as the posts notify-user function, data.type routes it on the client
+    let plaintext = serde_json::to_vec(&serde_json::json!({
         "title": title,
         "body": body,
-        "mls_message": payload_data,
+        "data": {
+            "type": "message",
+            "activity_id": activity_id,
+            "object_id": object_id,
+        },
     }))
     .unwrap_or_default();
+
+    let payload = match encrypt_web_push(p256dh, auth, &plaintext) {
+        Some(p) => p,
+        None => {
+            error!(
+                "WebPush Error: failed to encrypt payload for device {}",
+                device.did
+            );
+            return;
+        }
+    };
+    if payload.len() > WEB_PUSH_MAX_BODY {
+        error!(
+            "WebPush Error: payload of {} bytes too large for device {}",
+            payload.len(),
+            device.did
+        );
+        return;
+    }
 
     let signing_key = match vapid_signing_key() {
         Some(k) => k,
@@ -178,6 +285,8 @@ async fn send_web_push(
         .header("Content-Encoding", "aes128gcm")
         .header("Content-Type", "application/octet-stream")
         .header("TTL", "86400")
+        // lets the distributor wake the device out of doze for a chat message
+        .header("Urgency", "high")
         .header("Authorization", format!("vapid t={jwt}, k={pub_key_b64}"))
         .body(payload)
         .send()
@@ -355,11 +464,48 @@ pub async fn send_push_notifications(
                     device,
                     title,
                     body,
-                    payload_data,
+                    activity_id.as_deref().unwrap_or(""),
+                    object_id.as_deref().unwrap_or(""),
                 )));
             }
         }
     }
 
     futures::future::join_all(futs).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // RFC 8291 appendix A
+    #[test]
+    fn encrypts_the_rfc_8291_example() {
+        let b64 = |s| decode_b64_key(s).unwrap();
+        let as_secret =
+            SecretKey::from_be_bytes(&b64("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw")).unwrap();
+        let salt: [u8; 16] = b64("DGv6ra1nlYgDCS1FRnbzlw").try_into().unwrap();
+
+        let body = encrypt_aes128gcm(
+            &b64("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"),
+            &b64("BTBZMqHH6r4Tts7J_aSIgg"),
+            &as_secret,
+            &salt,
+            b"When I grow up, I want to be a watermelon",
+        )
+        .unwrap();
+
+        assert_eq!(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(body),
+            "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN"
+        );
+    }
+
+    #[test]
+    fn accepts_padded_and_standard_base64_keys() {
+        assert_eq!(
+            decode_b64_key("BTBZMqHH6r4Tts7J_aSIgg=="),
+            decode_b64_key("BTBZMqHH6r4Tts7J/aSIgg")
+        );
+    }
 }
