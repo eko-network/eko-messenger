@@ -15,6 +15,8 @@ pub enum AppError {
     /// once the caller has caught up.
     Conflict(String),
     DevicePending(String),
+    /// The device's token outlived the device, which was removed from the user's account.
+    DeviceRemoved(String),
     InternalError(anyhow::Error),
 }
 
@@ -27,6 +29,7 @@ impl std::fmt::Display for AppError {
             AppError::NotFound(msg) => write!(f, "Not Found: {}", msg),
             AppError::Conflict(msg) => write!(f, "Conflict: {}", msg),
             AppError::DevicePending(msg) => write!(f, "Device Pending: {}", msg),
+            AppError::DeviceRemoved(msg) => write!(f, "Device Removed: {}", msg),
             AppError::InternalError(e) => write!(f, "Internal Error: {}", e),
         }
     }
@@ -58,6 +61,10 @@ impl IntoResponse for AppError {
             AppError::DevicePending(msg) => {
                 error!("Device pending approval: {}", msg);
                 (StatusCode::FORBIDDEN, msg)
+            }
+            AppError::DeviceRemoved(msg) => {
+                debug!("Device removed: {}", msg);
+                (StatusCode::GONE, msg)
             }
             AppError::InternalError(e) => {
                 error!("Internal server error: {:#}", e);

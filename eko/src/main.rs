@@ -5,7 +5,7 @@ mod storage;
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::Extension;
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{
@@ -35,7 +35,12 @@ async fn require_device_approval(req: Request, next: Next) -> Response {
     }
 }
 
-async fn auth(Extension(jwt): Extension<JWTVerifier>, mut req: Request, next: Next) -> Response {
+async fn auth(
+    State(ctx): State<MessengerContext>,
+    Extension(jwt): Extension<JWTVerifier>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     if let Some(auth) = req
         .headers()
         .get("authorization")
@@ -43,7 +48,17 @@ async fn auth(Extension(jwt): Extension<JWTVerifier>, mut req: Request, next: Ne
         .and_then(|s| s.strip_prefix("Bearer "))
     {
         return match jwt.verify(auth).await {
-            Ok(claims) => {
+            Ok(mut claims) => {
+                // a token outlives changes to its device, which can be removed, e.g. by a device
+                // reset, or lose its approval, so the device record decides
+                match ctx.storage.device_approved(&claims.uid, claims.did).await {
+                    Ok(Some(approved)) => claims.device_approved = approved,
+                    Ok(None) => {
+                        return AppError::DeviceRemoved(format!("{} was removed", claims.did))
+                            .into_response();
+                    }
+                    Err(e) => return e.into_response(),
+                }
                 req.extensions_mut().insert(claims);
                 next.run(req).await
             }
@@ -62,11 +77,11 @@ async fn auth(Extension(jwt): Extension<JWTVerifier>, mut req: Request, next: Ne
 fn app(ctx: MessengerContext, jwt: JWTVerifier) -> Router {
     let approved = protocol_routes()
         .route_layer(middleware::from_fn(require_device_approval))
-        .route_layer(middleware::from_fn(auth))
+        .route_layer(middleware::from_fn_with_state(ctx.clone(), auth))
         .layer(Extension(jwt.clone()));
 
     let outbox = outbox_routes()
-        .route_layer(middleware::from_fn(auth))
+        .route_layer(middleware::from_fn_with_state(ctx.clone(), auth))
         .layer(Extension(jwt));
 
     public_routes()

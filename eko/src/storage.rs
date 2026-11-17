@@ -61,6 +61,21 @@ impl DeviceStore for Storage {
             })
             .collect())
     }
+    async fn device_approved(&self, uid: &str, did: DeviceId) -> Result<Option<bool>, AppError> {
+        let uid =
+            Uuid::parse_str(uid).map_err(|e| AppError::BadRequest(format!("invalid uid: {e}")))?;
+        let approved = sqlx::query_scalar(
+            r#"
+            SELECT approved_at IS NOT NULL FROM public.devices
+            WHERE id = $1 AND uid = $2
+            "#,
+        )
+        .bind(did.as_uuid())
+        .bind(uid)
+        .fetch_optional(&self.spool)
+        .await?;
+        Ok(approved)
+    }
     async fn device_chain_for_user(&self, uid: &str) -> Result<Vec<serde_json::Value>, AppError> {
         let uid =
             Uuid::parse_str(uid).map_err(|e| AppError::BadRequest(format!("invalid uid: {e}")))?;
