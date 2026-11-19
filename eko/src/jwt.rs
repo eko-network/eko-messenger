@@ -128,12 +128,16 @@ impl JWTVerifier {
     }
 
     pub async fn verify(&self, token: &str) -> Result<RequestAuth, AppError> {
-        let header = decode_header(token)?;
-        let kid = header.kid.ok_or_else(|| {
-            jsonwebtoken::errors::Error::from(jsonwebtoken::errors::ErrorKind::InvalidToken)
-        })?;
+        // e.g. an expired token, which is the client's to refresh, not a server error
+        let unauthorized = |e: jsonwebtoken::errors::Error| AppError::Unauthorized(e.to_string());
+        let header = decode_header(token).map_err(unauthorized)?;
+        let kid = header
+            .kid
+            .ok_or_else(|| AppError::Unauthorized("Token has no kid".to_string()))?;
         if let Ok(key) = self.key_service.lookup(&kid).await {
-            let claims = decode::<Claims>(token, &key, &self.validation).map(|v| v.claims)?;
+            let claims = decode::<Claims>(token, &key, &self.validation)
+                .map(|v| v.claims)
+                .map_err(unauthorized)?;
             if let Some(did) = claims.app_metadata.did {
                 return Ok(RequestAuth {
                     uid: claims.sub.to_string(),
