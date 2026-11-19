@@ -36,6 +36,10 @@ pub trait ActivityStore: Send + Sync {
     /// Gives up `did`'s claim on the group's epoch, when it turned out to have nothing to commit.
     async fn release_epoch(&self, group_id: &[u8], did: DeviceId) -> Result<(), AppError>;
 
+    /// The `Create` activities in a device's inbox, which unlike
+    /// [`ActivityStore::inbox_activities`] leaves its `Delivered` activities in there.
+    async fn inbox_creates(&self, did: DeviceId) -> Result<Vec<Activity>, AppError>;
+
     /// Removes a single device's inbox entry for an object without marking it delivered. Used
     /// when a device acknowledges an activity sent by another device of the same user.
     async fn remove_inbox_entry(&self, object_id: &str, did: DeviceId) -> Result<(), AppError>;
@@ -101,6 +105,22 @@ pub trait NotificationStore: Send + Sync {
 }
 
 #[async_trait]
+pub trait NotificationTokenStore: Send + Sync {
+    /// Makes `token_hash` the device's notification token, in place of the one it had.
+    async fn replace_notification_token(
+        &self,
+        uid: &str,
+        did: DeviceId,
+        token_hash: &[u8],
+    ) -> Result<(), AppError>;
+    /// The user and device a notification token was minted for.
+    async fn notification_token_device(
+        &self,
+        token_hash: &[u8],
+    ) -> Result<Option<(String, DeviceId)>, AppError>;
+}
+
+#[async_trait]
 pub trait UserStore: Send + Sync {
     async fn get_user_by_email(
         &self,
@@ -154,6 +174,12 @@ pub trait GroupStore: Send + Sync {
 }
 
 /// Full messenger storage — implement all sub-traits on your backend type.
-pub trait Storage: Send + Sync + DeviceStore + ActivityStore + NotificationStore {}
+pub trait Storage:
+    Send + Sync + DeviceStore + ActivityStore + NotificationStore + NotificationTokenStore
+{
+}
 
-impl<T> Storage for T where T: Send + Sync + DeviceStore + ActivityStore + NotificationStore {}
+impl<T> Storage for T where
+    T: Send + Sync + DeviceStore + ActivityStore + NotificationStore + NotificationTokenStore
+{
+}

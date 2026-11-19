@@ -316,6 +316,57 @@ async fn send_web_push(
     }
 }
 
+const APNS_PRODUCTION_HOST: &str = "api.push.apple.com";
+const APNS_SANDBOX_HOST: &str = "api.sandbox.push.apple.com";
+
+/// The hosts to try in order. Outside the sandbox a debug build's token is
+/// only known to the sandbox, which APNs reports as BadDeviceToken.
+fn apns_hosts(config: &ApnsConfig) -> &'static [&'static str] {
+    if config.sandbox {
+        &[APNS_SANDBOX_HOST]
+    } else {
+        &[APNS_PRODUCTION_HOST, APNS_SANDBOX_HOST]
+    }
+}
+
+/// The payload only wakes the notification service, which fetches the inbox. The MLS
+/// ciphertext is left out: commits and welcomes exceed the 4KB limit, and APNs keeps only
+/// the last push of a device that is offline, so the inbox has to be read anyway.
+fn apns_payload(
+    title: &str,
+    body: &str,
+    thread_id: &str,
+    activity_id: &str,
+    object_id: &str,
+) -> Value {
+    serde_json::json!({
+        "aps": {
+            "alert": {
+                "title": title,
+                "body": body,
+            },
+            "sound": "default",
+            "thread-id": thread_id,
+            "mutable-content": 1,
+        },
+        // same shape as the web push payload
+        "data": {
+            "type": "message",
+            "activity_id": activity_id,
+            "object_id": object_id,
+        },
+    })
+}
+
+/// The id of the notification shown for `object_id`, the same the notification service
+/// gives the ones it shows for messages it found in the inbox, so that the message's own
+/// push later replaces that notification instead of showing it twice.
+fn apns_collapse_id(object_id: &str) -> String {
+    use sha2::Digest;
+    // the id is limited to 64 bytes
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(object_id))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn send_apns(
     client: &Client,
@@ -324,51 +375,38 @@ async fn send_apns(
     config: &ApnsConfig,
     title: &str,
     body: &str,
-    payload_data: &Value,
-    activity_id: String,
-    object_id: String,
+    thread_id: &str,
+    activity_id: &str,
+    object_id: &str,
 ) {
     if config.private_key_p8.is_empty() {
         error!("APNS Error: Missing private key.");
         return;
     }
 
-    let jwt = match get_apns_token(config).await {
-        Some(t) => t,
-        None => {
-            error!("APNS Error: No valid APNS token available.");
-            return;
-        }
-    };
-
-    let apns_payload = serde_json::json!({
-        "aps": {
-            "alert": {
-                "title": title,
-                "body": body,
-            },
-            "mutable-content": 1,
-        },
-        "mls_message": payload_data,
-        "activity_id": activity_id,
-        "object_id": object_id,
-    });
-
-    let apns_host = if config.sandbox {
-        "api.sandbox.push.apple.com"
-    } else {
-        "api.development.push.apple.com" // FIXME need to have api.push.apple.com for PROD!!
-    };
-
-    let url = format!("https://{apns_host}/3/device/{}", device.token);
+    let apns_payload = apns_payload(title, body, thread_id, activity_id, object_id);
+    let collapse_id = apns_collapse_id(object_id);
+    let hosts = apns_hosts(config);
+    let mut host_index = 0;
     let mut retry = true;
 
-    loop {
+    while let Some(host) = hosts.get(host_index) {
+        let jwt = match get_apns_token(config).await {
+            Some(t) => t,
+            None => {
+                error!("APNS Error: No valid APNS token available.");
+                return;
+            }
+        };
+
+        let url = format!("https://{host}/3/device/{}", device.token);
         let res = match client
             .post(&url)
             .header("authorization", format!("bearer {jwt}"))
             .header("apns-topic", &config.bundle_id)
             .header("apns-push-type", "alert")
+            .header("apns-priority", "10")
+            .header("apns-collapse-id", &collapse_id)
             .json(&apns_payload)
             .send()
             .await
@@ -404,12 +442,23 @@ async fn send_apns(
             deactivate_device(store, device.did).await;
         } else if !status.is_success() {
             let body_text = res.text().await.unwrap_or_default();
+            host_index += 1;
+            if status.as_u16() == 400
+                && body_text.contains("BadDeviceToken")
+                && host_index < hosts.len()
+            {
+                info!(
+                    "APNS: token of device {} is not for {host}, trying the next host",
+                    device.did
+                );
+                continue;
+            }
             error!(
                 "APNS delivery failed for device {} {} with status {status}: {body_text}",
                 device.token, device.did
             );
         } else {
-            info!("APNS sent to device {}", device.did);
+            info!("APNS sent to device {} via {host}", device.did);
         }
 
         break;
@@ -423,7 +472,7 @@ pub async fn send_push_notifications(
     target_devices: &[DeviceId],
     title: &str,
     body: &str,
-    payload_data: &Value,
+    apns_thread_id: Option<&str>,
     activity_id: Option<String>,
     object_id: Option<String>,
 ) {
@@ -445,6 +494,10 @@ pub async fn send_push_notifications(
     for device in &endpoints {
         match device.notification_type {
             NotificationType::Apns => {
+                // APNs devices only get pushes that show a notification
+                let Some(thread_id) = apns_thread_id else {
+                    continue;
+                };
                 futs.push(Box::pin(send_apns(
                     client,
                     store,
@@ -452,9 +505,9 @@ pub async fn send_push_notifications(
                     &config,
                     title,
                     body,
-                    payload_data,
-                    activity_id.clone().unwrap_or("".to_string()),
-                    object_id.clone().unwrap_or("".to_string()),
+                    thread_id,
+                    activity_id.as_deref().unwrap_or(""),
+                    object_id.as_deref().unwrap_or(""),
                 )));
             }
             NotificationType::WebPush => {
@@ -499,6 +552,43 @@ mod tests {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(body),
             "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN"
         );
+    }
+
+    fn config(sandbox: bool) -> ApnsConfig {
+        ApnsConfig {
+            team_id: String::new(),
+            key_id: String::new(),
+            private_key_p8: String::new(),
+            bundle_id: String::new(),
+            sandbox,
+        }
+    }
+
+    #[test]
+    fn tries_production_before_the_sandbox() {
+        assert_eq!(
+            apns_hosts(&config(false)),
+            [APNS_PRODUCTION_HOST, APNS_SANDBOX_HOST]
+        );
+        assert_eq!(apns_hosts(&config(true)), [APNS_SANDBOX_HOST]);
+    }
+
+    #[test]
+    fn apns_payload_leaves_out_the_ciphertext() {
+        let payload = apns_payload("t", "b", "group", "activity", "object");
+        assert_eq!(payload["aps"]["mutable-content"], 1);
+        assert_eq!(payload["aps"]["thread-id"], "group");
+        assert_eq!(payload["data"]["type"], "message");
+        assert_eq!(payload["data"]["object_id"], "object");
+        assert!(payload.get("mls_message").is_none());
+    }
+
+    #[test]
+    fn collapse_ids_fit_apns() {
+        // NotificationService.swift derives the same
+        let id = apns_collapse_id("https://eko.example/objects/1");
+        assert_eq!(id, "r3E_Ppz4wOzFgTY-8vOisWLkpDh450BtmysI2zxLW2s");
+        assert!(id.len() <= 64);
     }
 
     #[test]

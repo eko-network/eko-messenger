@@ -8,7 +8,7 @@ use eko_messenger::{
     storage::{
         DeviceStore,
         models::{DeviceNotificationInfo, GroupMessage, StoredDevice},
-        traits::NotificationStore,
+        traits::{NotificationStore, NotificationTokenStore},
     },
     types::{Delivered, objects::ObjectBase},
 };
@@ -155,6 +155,25 @@ impl ActivityStore for Storage {
 
         tx.commit().await?;
         Ok(activities)
+    }
+
+    async fn inbox_creates(&self, did: DeviceId) -> Result<Vec<Activity>, AppError> {
+        let activities: Vec<serde_json::Value> = sqlx::query_scalar(
+            r#"
+            SELECT activity
+            FROM messages
+            JOIN entries ON messages.id = entries.message_id
+            WHERE entries.did = $1 AND activity_type = 'Create'
+            ORDER BY messages.created_at ASC
+            "#,
+        )
+        .bind(did.as_uuid())
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(activities
+            .into_iter()
+            .map(|activity| serde_json::from_value(activity).map(Activity::Create))
+            .collect::<Result<_, _>>()?)
     }
 
     async fn insert_create(
@@ -394,5 +413,44 @@ impl NotificationStore for Storage {
         .await?;
 
         Ok(())
+    }
+}
+
+#[async_trait]
+impl NotificationTokenStore for Storage {
+    async fn replace_notification_token(
+        &self,
+        uid: &str,
+        did: DeviceId,
+        token_hash: &[u8],
+    ) -> Result<(), AppError> {
+        let uid =
+            Uuid::parse_str(uid).map_err(|e| AppError::BadRequest(format!("invalid uid: {e}")))?;
+        sqlx::query(
+            r#"
+            INSERT INTO notification_tokens (did, uid, token_hash)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (did) DO UPDATE
+            SET uid = EXCLUDED.uid, token_hash = EXCLUDED.token_hash, created_at = now()
+            "#,
+        )
+        .bind(did.as_uuid())
+        .bind(uid)
+        .bind(token_hash)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn notification_token_device(
+        &self,
+        token_hash: &[u8],
+    ) -> Result<Option<(String, DeviceId)>, AppError> {
+        let row: Option<(Uuid, Uuid)> =
+            sqlx::query_as("SELECT uid, did FROM notification_tokens WHERE token_hash = $1")
+                .bind(token_hash)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(uid, did)| (uid.to_string(), DeviceId::new(did))))
     }
 }

@@ -143,6 +143,7 @@ impl JWTVerifier {
                     uid: claims.sub.to_string(),
                     did,
                     device_approved: claims.app_metadata.dat.is_some(),
+                    notification_service: false,
                 });
             }
             Err(AppError::Unauthorized("Missing or invalid did".to_string()))

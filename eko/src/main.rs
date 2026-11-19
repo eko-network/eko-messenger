@@ -5,8 +5,8 @@ mod storage;
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::Extension;
-use axum::extract::{Request, State};
-use axum::http::StatusCode;
+use axum::extract::{MatchedPath, Request, State};
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{
     Router,
@@ -14,7 +14,8 @@ use axum::{
     response::Html,
     routing::get,
 };
-use eko_messenger::server::WebSocketService;
+use eko_messenger::notification_tokens;
+use eko_messenger::server::{INBOX_ROUTE, OUTBOX_ROUTE, WebSocketService};
 use eko_messenger::{
     AppError, MessengerContext, RequestAuth, outbox_routes, protocol_routes, public_routes,
 };
@@ -47,7 +48,14 @@ async fn auth(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
     {
-        return match jwt.verify(auth).await {
+        let verified = match notification_tokens::hash(auth) {
+            Some(hash) => {
+                let allowed = notification_service_route(&req);
+                notification_service_auth(&ctx, allowed, &hash).await
+            }
+            None => jwt.verify(auth).await,
+        };
+        return match verified {
             Ok(mut claims) => {
                 // a token outlives changes to its device, which can be removed, e.g. by a device
                 // reset, or lose its approval, so the device record decides
@@ -62,6 +70,7 @@ async fn auth(
                 req.extensions_mut().insert(claims);
                 next.run(req).await
             }
+            Err(e) if notification_tokens::hash(auth).is_some() => e.into_response(),
             Err(e) => {
                 debug!(
                     jwt_error = %e,
@@ -72,6 +81,41 @@ async fn auth(
         };
     }
     (StatusCode::UNAUTHORIZED, "Missing Authorization Header").into_response()
+}
+
+/// A notification token only reads the inbox and sends to the outbox, where only
+/// `Delivered` activities are accepted from it.
+fn notification_service_route(req: &Request) -> bool {
+    let route = req.extensions().get::<MatchedPath>().map(MatchedPath::as_str);
+    match *req.method() {
+        Method::GET => route == Some(INBOX_ROUTE),
+        Method::POST => route == Some(OUTBOX_ROUTE),
+        _ => false,
+    }
+}
+
+async fn notification_service_auth(
+    ctx: &MessengerContext,
+    allowed: bool,
+    token_hash: &[u8],
+) -> Result<RequestAuth, AppError> {
+    if !allowed {
+        return Err(AppError::Forbidden(
+            "A notification token is only good for the inbox and outbox".into(),
+        ));
+    }
+    let (uid, did) = ctx
+        .storage
+        .notification_token_device(token_hash)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Unknown notification token".into()))?;
+    Ok(RequestAuth {
+        uid,
+        did,
+        // the device record decides
+        device_approved: false,
+        notification_service: true,
+    })
 }
 
 fn app(ctx: MessengerContext, jwt: JWTVerifier) -> Router {

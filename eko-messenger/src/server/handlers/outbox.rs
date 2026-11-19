@@ -7,7 +7,6 @@ use axum::{
 use base64::Engine;
 use base64::engine::general_purpose;
 use futures::future::join_all;
-use serde_json::Value;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -29,6 +28,12 @@ pub async fn post_to_outbox(
     if claims.uid != uid {
         return Err(AppError::Forbidden(
             "Cannot post to another user's outbox".to_string(),
+        ));
+    }
+
+    if claims.notification_service && !matches!(payload, Activity::Delivered(_)) {
+        return Err(AppError::Forbidden(
+            "A notification token only sends Delivered activities".into(),
         ));
     }
 
@@ -112,20 +117,19 @@ pub async fn post_to_outbox(
                 .await?;
             join_all(delivery_futures).await;
 
-            let content = match &create.object {
-                // approval requests carry no MLS payload for the notification service to decrypt,
-                // they are only delivered over the websocket / inbox
-                Object::ApprovalRequest(_) => None,
-                Object::PrivateMessage(private_message) => Some(&private_message.content),
-                Object::WelcomeMessage(welcome_message) => Some(&welcome_message.content),
-            };
-            if let Some(content) = content {
+            // approval requests are only delivered over the websocket / inbox
+            if !matches!(create.object, Object::ApprovalRequest(_)) {
+                // iOS shows a notification for every push it is sent, so it only gets the
+                // application messages, grouped by chat. The rest waits in the inbox.
+                let apns_thread_id = framing
+                    .as_ref()
+                    .filter(|framing| framing.content_type == mls::ContentType::Application)
+                    .map(|framing| general_purpose::URL_SAFE_NO_PAD.encode(&framing.group_id));
                 let client = reqwest::Client::builder().use_rustls_tls().build()?;
                 let storage = ctx.storage.clone();
                 let devices = push_devices;
                 let title = "New message";
                 let body = "Encrypted message";
-                let payload_data = Value::String(general_purpose::STANDARD.encode(content));
                 let activity_id = create.id.clone();
                 let object_id = create.object.id().map(|s| s.to_string());
                 tokio::spawn(async move {
@@ -135,7 +139,7 @@ pub async fn post_to_outbox(
                         &devices,
                         title,
                         body,
-                        &payload_data,
+                        apns_thread_id.as_deref(),
                         activity_id,
                         object_id,
                     )

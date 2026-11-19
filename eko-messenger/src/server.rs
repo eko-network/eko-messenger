@@ -15,7 +15,8 @@ pub use websocket::WebSocketService;
 use crate::{
     server::{
         handlers::{
-            capabilities_handler, claim_epoch, get_inbox, post_to_outbox, release_epoch, take_key,
+            capabilities_handler, claim_epoch, get_inbox, post_notification_token, post_to_outbox,
+            release_epoch, take_key,
         },
         websocket::ws_handler,
     },
@@ -30,6 +31,11 @@ pub const DEVICE_KEYS_ENDPOINT: &str = "keys";
 
 pub const SOCKET_URL: &str = "/ws";
 
+/// The routes a notification token is good for, see [`crate::notification_tokens`].
+pub const INBOX_ROUTE: &str = "/users/{uid}/inbox";
+pub const OUTBOX_ROUTE: &str = "/users/{uid}/outbox";
+const NOTIFICATION_TOKEN_ROUTE: &str = "/users/{uid}/notificationToken";
+
 #[derive(Clone)]
 pub struct MessengerContext {
     pub domain: Arc<String>,
@@ -42,6 +48,10 @@ pub struct RequestAuth {
     pub uid: String,
     pub did: crate::devices::DeviceId,
     pub device_approved: bool,
+    /// Signed in with the device's notification token, which only reads the inbox and
+    /// sends `Delivered` activities.
+    #[serde(default)]
+    pub notification_service: bool,
 }
 
 impl RequestAuth {
@@ -60,7 +70,8 @@ pub fn protocol_routes() -> Router<MessengerContext> {
     Router::new()
         .route("/users/{uid}/devices", get(get_devices))
         .route("/users/{uid}/devices/{did}/keys", post(take_key))
-        .route("/users/{uid}/inbox", get(get_inbox))
+        .route(INBOX_ROUTE, get(get_inbox))
+        .route(NOTIFICATION_TOKEN_ROUTE, post(post_notification_token))
         .route(
             "/groups/{group_id}/claim",
             post(claim_epoch).delete(release_epoch),
@@ -69,7 +80,7 @@ pub fn protocol_routes() -> Router<MessengerContext> {
 }
 
 pub fn outbox_routes() -> Router<MessengerContext> {
-    Router::new().route("/users/{uid}/outbox", post(post_to_outbox))
+    Router::new().route(OUTBOX_ROUTE, post(post_to_outbox))
 }
 
 pub fn public_routes() -> Router<MessengerContext> {

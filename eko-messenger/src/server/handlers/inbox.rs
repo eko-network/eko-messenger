@@ -15,7 +15,13 @@ pub async fn get_inbox(
     let actor_id = actor_url(&ctx.domain, &auth.uid);
     info!("GET inbox for {}, {}", actor_id, auth.did);
 
-    let items = ctx.storage.inbox_activities(auth.did).await?;
+    // the notification service only applies messages, the app still has to see what was
+    // delivered
+    let items = if auth.notification_service {
+        ctx.storage.inbox_creates(auth.did).await?
+    } else {
+        ctx.storage.inbox_activities(auth.did).await?
+    };
     let inbox_url = format!("{}/inbox", actor_id);
     Ok(Json(OrderedCollection::new(inbox_url, Some(items))))
 }
