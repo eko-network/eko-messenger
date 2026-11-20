@@ -16,6 +16,9 @@ pub struct PrivateMessage {
     pub to: Vec<String>,
     #[serde_as(as = "Base64")]
     pub content: Vec<u8>,
+    /// false when the recipients must not get a push for it, e.g. a read receipt
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<bool>,
 }
 
 #[serde_as]

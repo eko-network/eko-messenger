@@ -86,7 +86,10 @@ async fn auth(
 /// A notification token only reads the inbox and sends to the outbox, where only
 /// `Delivered` activities are accepted from it.
 fn notification_service_route(req: &Request) -> bool {
-    let route = req.extensions().get::<MatchedPath>().map(MatchedPath::as_str);
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str);
     match *req.method() {
         Method::GET => route == Some(INBOX_ROUTE),
         Method::POST => route == Some(OUTBOX_ROUTE),

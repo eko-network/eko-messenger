@@ -183,7 +183,7 @@ All MLS encrypted messages:
 * `to` is the list of Users the server must fanout the message to.
 * Contains one or more MLS messages (PrivateMessage, Welcome, or Commit).
 * Is delivered as a single ActivityPub Create activity.
-* `notify` is an optional field set by the client to hint whether or not the server should notify the recipient.
+* `notify` is an optional field set by the client to hint whether or not the server should notify the recipient. When it is `false` the server MUST NOT send push notifications for the message, it is still delivered to the inbox and over the socket. Defaults to `true`.
 * `expires` is an optional field. If the server is unable to deliver the message before it expires, it should give up and discard the message. This is useful for transient activities such as a typing indicator.
 
 Example: User sending a `PrivateMessage`
@@ -381,6 +381,27 @@ Example: Delete activity
 {
   "@context": "https://www.w3.org/ns/activitystreams",
   "type": "Delete",
+  "id": "urn:uuid:<uid>",
+  "object": "urn:uuid:<uid>"
+}
+```
+
+### Read Receipts
+
+A `Read` activity moves the actor's read cursor in the group: the actor has read every message in the group up to and including `object`, the id of a content object previously delivered to the group. There is no receipt per message.
+
+* Clients order messages by the order they received them in and resolve `object` to its place in that order.
+* A cursor only moves forward. A `Read` whose `object` comes before the actor's current cursor is ignored.
+* A `Read` whose `object` is unknown to the client is ignored, a later `Read` moves the cursor.
+* Sending a message moves the sender's cursor to it, no `Read` is needed for it.
+* `Read` is also delivered to the actor's other devices, which mark the group read up to `object`.
+* Clients SHOULD send `Read` with `notify` set to `false` and SHOULD NOT send `Delivered` for it to its actor.
+
+Example: Read activity
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Read",
   "id": "urn:uuid:<uid>",
   "object": "urn:uuid:<uid>"
 }

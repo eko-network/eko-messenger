@@ -117,8 +117,14 @@ pub async fn post_to_outbox(
                 .await?;
             join_all(delivery_futures).await;
 
-            // approval requests are only delivered over the websocket / inbox
-            if !matches!(create.object, Object::ApprovalRequest(_)) {
+            // approval requests are only delivered over the websocket / inbox, and the
+            // client can ask for no push, e.g. for read receipts
+            let notify = match &create.object {
+                Object::ApprovalRequest(_) => false,
+                Object::PrivateMessage(private_message) => private_message.notify != Some(false),
+                Object::WelcomeMessage(_) => true,
+            };
+            if notify {
                 // iOS shows a notification for every push it is sent, so it only gets the
                 // application messages, grouped by chat. The rest waits in the inbox.
                 let apns_thread_id = framing
